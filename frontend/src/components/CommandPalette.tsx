@@ -75,19 +75,20 @@ export default function CommandPalette() {
       : items;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} aria-hidden="true" />
       <div className="relative w-full max-w-xl bg-stellar-card border border-stellar-border rounded-xl shadow-2xl overflow-hidden">
         <div className="px-4 py-3">
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type a command or search..." className="w-full bg-transparent text-white py-2 outline-none" />
+          <label htmlFor="command-palette-input" className="sr-only">Type a command or search</label>
+          <input id="command-palette-input" role="combobox" aria-expanded="true" aria-controls="command-palette-listbox" aria-autocomplete="list" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Type a command or search..." className="w-full bg-transparent text-white py-2 outline-none" />
         </div>
         <div className="max-h-80 overflow-y-auto">
           {recent.length > 0 && query.trim() === "" && (
-            <div className="px-3 py-2 text-xs text-stellar-text-secondary">Recent</div>
+            <div className="px-3 py-2 text-xs text-stellar-text-secondary" id="command-palette-recent">Recent</div>
           )}
-          <ul>
+          <ul role="listbox" id="command-palette-listbox" aria-label="Available commands">
             {visibleItems.map((a) => (
-              <li key={a.id} className="px-3 py-2 hover:bg-stellar-border/60 cursor-pointer" onClick={() => execute(a)}>
+              <li key={a.id} role="option" aria-selected="false" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); execute(a); } }} className="px-3 py-2 hover:bg-stellar-border/60 cursor-pointer focus:outline-none focus:bg-stellar-border/60" onClick={() => execute(a)}>
                 <div className="text-sm text-stellar-text-primary">{a.title}</div>
                 <div className="text-xs text-stellar-text-secondary">{a.href}</div>
               </li>

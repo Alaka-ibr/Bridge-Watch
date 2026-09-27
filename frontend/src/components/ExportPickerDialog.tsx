@@ -174,18 +174,27 @@ export default function ExportPickerDialog({
     }
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   if (!open) {
     return null;
   }
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6">
-      <div className="relative mx-auto w-full max-w-4xl rounded-3xl border border-stellar-border bg-stellar-card shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-labelledby="export-dialog-title" aria-describedby="export-dialog-desc" className="relative mx-auto w-full max-w-4xl rounded-3xl border border-stellar-border bg-stellar-card shadow-2xl">
         <div className="flex flex-col gap-6 p-6 lg:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-semibold text-white">Export data</h2>
-              <p className="mt-2 text-sm text-stellar-text-secondary">
+              <h2 id="export-dialog-title" className="text-2xl font-semibold text-white">Export data</h2>
+              <p id="export-dialog-desc" className="mt-2 text-sm text-stellar-text-secondary">
                 Choose the format, scope, and date range for the export. The picker saves your last selection and shows live status while the export is processed.
               </p>
             </div>
@@ -205,6 +214,7 @@ export default function ExportPickerDialog({
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-white">File format</span>
                   <select
+                    aria-label="File format"
                     value={preferences.format}
                     onChange={(event) => updatePreference("format", event.target.value as ExportFormat)}
                     className="w-full rounded-xl border border-stellar-border bg-stellar-dark/80 px-3 py-3 text-sm text-white outline-none focus:border-stellar-blue focus:ring-2 focus:ring-stellar-blue/30"
@@ -220,6 +230,7 @@ export default function ExportPickerDialog({
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-white">Export scope</span>
                   <select
+                    aria-label="Export scope"
                     value={preferences.dataType}
                     onChange={(event) => updatePreference("dataType", event.target.value as ExportDataType)}
                     className="w-full rounded-xl border border-stellar-border bg-stellar-dark/80 px-3 py-3 text-sm text-white outline-none focus:border-stellar-blue focus:ring-2 focus:ring-stellar-blue/30"
@@ -425,7 +436,7 @@ export default function ExportPickerDialog({
           </div>
 
           {errorMessage ? (
-            <div className="rounded-3xl border border-rose-500/40 bg-rose-900/40 p-4 text-sm text-rose-100">
+            <div role="alert" aria-live="assertive" className="rounded-3xl border border-rose-500/40 bg-rose-900/40 p-4 text-sm text-rose-100">
               {errorMessage}
             </div>
           ) : null}

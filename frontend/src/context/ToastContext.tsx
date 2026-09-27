@@ -31,7 +31,9 @@ function ToastViewport({
       {toasts.map((t) => (
         <div
           key={t.id}
-          role="status"
+          role={t.variant === "error" ? "alert" : "status"}
+          aria-live={t.variant === "error" ? "assertive" : "polite"}
+          aria-atomic="true"
           aria-labelledby={titleId}
           className={`pointer-events-auto rounded-lg border px-4 py-3 shadow-lg backdrop-blur-sm ${
             t.variant === "error"

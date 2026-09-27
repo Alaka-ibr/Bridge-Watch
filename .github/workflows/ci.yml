@@ -272,6 +272,72 @@ jobs:
           printf 'frontend-build\tnpm --workspace=frontend run build\tfrontend-build.log\n' >> "$COMMAND_LOG_DIR/COMMANDS.tsv"
           npm --workspace=frontend run build 2>&1 | tee "$COMMAND_LOG_DIR/frontend-build.log"
 
+      # --- Frontend bundle size tracking (#1341) ---
+      # Captures vite build output size, compares against the checked-in
+      # baseline (frontend/.bundle-size-baseline.json), warns at +500KB and
+      # fails at +1MB, and posts the diff as a PR comment.
+      - name: Bundle size report
+        id: bundle-size
+        run: |
+          set -o pipefail
+          printf 'bundle-size\tnode scripts/check-bundle-size.mjs\tbundle-size.log\n' >> "$COMMAND_LOG_DIR/COMMANDS.tsv"
+          node scripts/check-bundle-size.mjs 2>&1 | tee "$COMMAND_LOG_DIR/bundle-size.log"
+        continue-on-error: true
+
+      - name: Check bundle size budget
+        run: |
+          FAIL="$(cat /tmp/bundle-size.json 2>/dev/null | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d).fail)}catch{console.log('false')}})" || echo false)"
+          if [ "$FAIL" = "true" ]; then
+            echo "::error::Frontend bundle grew by more than 1MB over baseline. Run 'npm --workspace=frontend run bundle:size' locally and justify or reduce the increase."
+            exit 1
+          fi
+
+      - name: Post bundle size PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = '### Frontend bundle size\n\nBundle size report unavailable (build may have failed).';
+            try {
+              body = fs.readFileSync('/tmp/bundle-size.md', 'utf8');
+            } catch {}
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = '<!-- bridge-watch-bundle-size -->';
+            const full = `${marker}\n${body}`;
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: full,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: full,
+              });
+            }
+
+      - name: Upload bundle size report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-bundle-size
+          path: |
+            /tmp/bundle-size.json
+            /tmp/bundle-size.md
+            frontend/dist/**/.vite/manifest.json
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Storybook build
         run: |
           set -o pipefail
@@ -283,6 +349,12 @@ jobs:
           set -o pipefail
           printf 'frontend-test\tnpm --workspace=frontend run test\tfrontend-test.log\n' >> "$COMMAND_LOG_DIR/COMMANDS.tsv"
           npm --workspace=frontend run test 2>&1 | tee "$COMMAND_LOG_DIR/frontend-test.log"
+
+      - name: Accessibility tests (axe-core)
+        run: |
+          set -o pipefail
+          printf 'frontend-a11y\tnpm --workspace=frontend run test:a11y\tfrontend-a11y.log\n' >> "$COMMAND_LOG_DIR/COMMANDS.tsv"
+          npm --workspace=frontend run test:a11y 2>&1 | tee "$COMMAND_LOG_DIR/frontend-a11y.log"
 
       - name: Visual Regression Tests
         run: |

@@ -25,6 +25,7 @@ export function Modal({
   isOpen,
   onClose,
   children,
+  title,
   ariaLabelledBy,
   ariaDescribedBy,
   size = "md",
@@ -59,7 +60,7 @@ export function Modal({
     [onClose, closeOnBackdropClick]
   );
 
-  // Handle focus trap
+  // Handle focus trap (Tab cycles inside dialog) + restore focus on close
   useEffect(() => {
     if (!isOpen) return;
 
@@ -71,10 +72,34 @@ export function Modal({
         "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
       );
       const firstFocusableElement = focusableElements[0] as HTMLElement;
-      firstFocusableElement?.focus();
+      (firstFocusableElement ?? contentRef.current)?.focus();
     }
 
+    const handleTabTrap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab" || !contentRef.current) return;
+      const focusable = Array.from(
+        contentRef.current.querySelectorAll<HTMLElement>(
+          "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+        )
+      ).filter((el) => !el.hasAttribute("disabled") && el.offsetParent !== null);
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleTabTrap);
     return () => {
+      document.removeEventListener("keydown", handleTabTrap);
       // Restore focus when modal closes
       previousActiveElement?.focus();
     };
@@ -94,9 +119,14 @@ export function Modal({
         className={`relative w-full ${sizeClasses[size]} bg-stellar-card border border-stellar-border rounded-lg shadow-xl`}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabelledBy ? undefined : (title ?? "Dialog")}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
+        tabIndex={-1}
       >
+        {title && !ariaLabelledBy ? (
+          <h2 className="sr-only">{title}</h2>
+        ) : null}
         {children}
       </div>
     </div>

@@ -1,0 +1,7 @@
+{
+  "generatedAt": "2026-09-27T00:00:00.000Z",
+  "note": "Initial frontend bundle size baseline for CI tracking (#1341). Update via `npm --workspace=frontend run bundle:size` after intentional size changes.",
+  "totalBytes": 0,
+  "gzipBytes": 0,
+  "files": []
+}

@@ -64,11 +64,24 @@ function getRequiredConfirmations(chain: string): number {
   return MIN_CONFIRMATIONS[chain] ?? 3;
 }
 
+/** How often the zombie-lease reaper runs (#1269). */
+export const INGESTION_LEASE_REAPER_INTERVAL_MS = 10_000;
+/** Leases/jobs with no heartbeat/progress beyond this are presumed dead (#1269). */
+export const INGESTION_ZOMBIE_THRESHOLD_MS = 30_000;
+
+export interface ReapedZombie {
+  leaseKey: string;
+  previousOwner: string | null;
+  range: Record<string, unknown>;
+  requeuedJobId: string | null;
+}
+
 export class IngestionQueueManager {
   private static instance: IngestionQueueManager;
 
   private readonly concurrencyLimit: number;
   private processingCount = 0;
+  private leaseReaperTimer: NodeJS.Timeout | null = null;
 
   private constructor(concurrencyLimit: number = 5) {
     this.concurrencyLimit = concurrencyLimit;
@@ -429,6 +442,105 @@ export class IngestionQueueManager {
     }
 
     return rolledBackEventIds;
+  }
+
+  // ── Zombie lease reaper (#1269) ──────────────────────────────────────
+  //
+  // Workers heartbeat their ledger-range leases every 10s (see
+  // WorkerLeaseService.startHeartbeat). When a pod dies abruptly the
+  // heartbeat stops; this reaper evicts leases with no heartbeat for >30s
+  // and re-queues their unfinished ranges so ingestion does not stall until
+  // manual operator intervention.
+
+  /** Start the periodic zombie-lease reaper. Safe to call multiple times. */
+  public startLeaseReaper(intervalMs: number = INGESTION_LEASE_REAPER_INTERVAL_MS): void {
+    if (this.leaseReaperTimer) return;
+    const timer = setInterval(() => {
+      this.reapZombieLeases().catch((err) => logger.error({ err }, "Lease reaper cycle failed"));
+    }, intervalMs);
+    if (typeof (timer as any)?.unref === "function") (timer as any).unref();
+    this.leaseReaperTimer = timer;
+  }
+
+  /** Stop the periodic zombie-lease reaper. */
+  public stopLeaseReaper(): void {
+    if (this.leaseReaperTimer) {
+      clearInterval(this.leaseReaperTimer);
+      this.leaseReaperTimer = null;
+    }
+  }
+
+  /**
+   * One reaper cycle: evict zombie leases and re-queue unfinished ranges.
+   *
+   * 1. Evicts leases with no heartbeat for > threshold via
+   *    WorkerLeaseService.evictZombieLeases (lazy import avoids a module cycle).
+   * 2. For each evicted lease, re-queues its `metadata.range` as a pending
+   *    ingestion job (or resets the referenced `metadata.jobId` to pending).
+   * 3. Sweeps `ingestion_jobs` stuck in `processing` with no progress beyond
+   *    the threshold back to `pending` as a second safety net.
+   */
+  public async reapZombieLeases(now: Date = new Date()): Promise<ReapedZombie[]> {
+    const { workerLeaseService } = await import("./workerLease.service.js");
+    const evicted = await workerLeaseService.evictZombieLeases(now, INGESTION_ZOMBIE_THRESHOLD_MS);
+    const reaped: ReapedZombie[] = [];
+
+    for (const lease of evicted) {
+      const meta = (lease.metadata ?? {}) as Record<string, unknown>;
+      const range =
+        (meta.range as Record<string, unknown> | undefined) ??
+        (meta as Record<string, unknown>);
+      let requeuedJobId: string | null = null;
+      try {
+        if (typeof meta.jobId === "string") {
+          const db = getDatabase();
+          const updated = await db("ingestion_jobs")
+            .where({ id: meta.jobId })
+            .whereIn("status", ["processing", "failed"])
+            .update({ status: "pending", next_retry_at: null, updated_at: now });
+          if (updated > 0) requeuedJobId = meta.jobId as string;
+        }
+        if (!requeuedJobId && range && (range.fromLedger !== undefined || range.from !== undefined)) {
+          const job = await this.enqueueJob({
+            type: "event",
+            priority: JobPriority.HIGH,
+            payload: {
+              requeuedFromZombieLease: lease.leaseKey,
+              previousOwner: lease.ownerId,
+              range,
+            },
+          });
+          requeuedJobId = job.id;
+        }
+      } catch (err) {
+        logger.error({ err, leaseKey: lease.leaseKey }, "Failed re-queueing zombie lease range");
+      }
+      logger.warn(
+        { leaseKey: lease.leaseKey, previousOwner: lease.ownerId, requeuedJobId },
+        "Zombie worker lease evicted and range re-queued"
+      );
+      reaped.push({
+        leaseKey: lease.leaseKey,
+        previousOwner: lease.ownerId,
+        range: range ?? {},
+        requeuedJobId,
+      });
+    }
+
+    // Safety net: jobs stuck in `processing` with no update beyond threshold
+    // (e.g. worker died before a lease row existed) go back to `pending`.
+    try {
+      const db = getDatabase();
+      const stuckCutoff = new Date(now.getTime() - INGESTION_ZOMBIE_THRESHOLD_MS);
+      await db("ingestion_jobs")
+        .where({ status: "processing" })
+        .andWhere("updated_at", "<=", stuckCutoff)
+        .update({ status: "pending", updated_at: now });
+    } catch (err) {
+      logger.error({ err }, "Failed sweeping stuck processing jobs");
+    }
+
+    return reaped;
   }
 
   public async getMetrics(): Promise<IngestionMetrics> {
