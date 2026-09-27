@@ -110,6 +110,12 @@ const ExportQuotas = lazy(() => import("./pages/admin/ExportQuotas"));
 const RpcCapabilities = lazy(() => import("./pages/admin/RpcCapabilities"));
 const TokenDecimalAlerts = lazy(() => import("./pages/admin/TokenDecimalAlerts"));
 const AuditTrailPage = lazy(() => import("./pages/admin/audit/AuditTrailPage"));
+// #1199 — Contract Event Subscription Registry
+const ContractEventSubscriptions = lazy(() => import("./pages/ContractEventSubscriptions"));
+// #1190 — Secret Provider Health Checks
+const SecretProviderHealth = lazy(() => import("./pages/admin/SecretProviderHealth"));
+// #1191 — Container Resource Utilization Dashboard
+const ContainerResourceUtilization = lazy(() => import("./pages/ContainerResourceUtilization"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -243,6 +249,12 @@ function App() {
               <Route path="/admin/rpc-capabilities" element={<RpcCapabilities />} />
               <Route path="/admin/token-decimal-alerts" element={<TokenDecimalAlerts />} />
               <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
+              {/* #1199 — Contract Event Subscription Registry */}
+              <Route path="/contract-subscriptions" element={<ContractEventSubscriptions />} />
+              {/* #1190 — Secret Provider Health Checks */}
+              <Route path="/admin/secret-provider-health" element={<SecretProviderHealth />} />
+              {/* #1191 — Container Resource Utilization Dashboard */}
+              <Route path="/container-resources" element={<ContainerResourceUtilization />} />
             </Route>
           </Routes>
         </Suspense>
