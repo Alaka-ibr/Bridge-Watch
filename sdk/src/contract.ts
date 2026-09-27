@@ -338,6 +338,29 @@ function parseScvI128(val: StellarSdk.xdr.ScVal): bigint {
   return (hi << BigInt(64)) | lo;
 }
 
+function parseScvSymbol(val: StellarSdk.xdr.ScVal): string {
+  const v = val.sym();
+  if (v == null) return "";
+  return typeof v === "string" ? v : Buffer.from(v).toString("utf-8");
+}
+
+function parseScvAddress(val: StellarSdk.xdr.ScVal): string {
+  return StellarSdk.Address.fromScVal(val).toString();
+}
+
+/**
+ * Normalizes one topic/value entry from a raw Soroban event into an
+ * `xdr.ScVal`. `getEvents` (and the WebSocket relay in `client.ts`) can
+ * deliver either the base64 XDR string form or an already-parsed `ScVal`
+ * depending on the RPC client/transport in front of it — accepting both
+ * here means the event parsers below don't have to care which one arrived.
+ */
+function toScVal(input: string | StellarSdk.xdr.ScVal): StellarSdk.xdr.ScVal {
+  return typeof input === "string"
+    ? StellarSdk.xdr.ScVal.fromXDR(input, "base64")
+    : input;
+}
+
 function getScvMap(
   val: StellarSdk.xdr.ScVal
 ): Map<string, StellarSdk.xdr.ScVal> {
@@ -1107,4 +1130,194 @@ export class TypedBridgeWatchContractSdk extends BridgeWatchContractSdk {
     if (!val) return false;
     return val.switch().name === "scvBool" && parseScvBool(val);
   }
+}
+
+// ============================================================
+// Typed contract event decoding (issue #1290)
+// ============================================================
+//
+// `onEvent` (subscribeToEvents / subscribeToEventsWebSocket in client.ts)
+// hands consumers the raw event object, whose `topic`/`value` fields carry
+// XDR `ScVal`s (as base64 strings or already-parsed objects, depending on
+// the transport). Without these helpers, every consumer has to know each
+// event's exact topic name, topic order, and value shape and re-derive the
+// same decoding boilerplate. Topic names and payload shapes below are read
+// directly from the emitting contract (contracts/soroban/src/lib.rs):
+//   health_up  -> topics [Symbol("health_up"), asset_code: String], value: u32
+//   price_dev  -> topics [Symbol("price_dev"), asset_code: String], value: i128
+//   em_pause   -> topics [Symbol("em_pause"),  caller: Address],    value: String
+
+export const HEALTH_UPDATE_EVENT_TOPIC = "health_up";
+export const PRICE_DEVIATION_EVENT_TOPIC = "price_dev";
+export const CIRCUIT_BREAKER_EVENT_TOPIC = "em_pause";
+
+/**
+ * Shape of the raw event object passed to `onEvent` by
+ * `subscribeToEvents`/`subscribeToEventsWebSocket`. `topic`/`value` entries
+ * may be base64 XDR strings or already-decoded `ScVal`s.
+ */
+export interface RawContractEvent {
+  type?: string;
+  ledger?: number;
+  ledgerClosedAt?: string;
+  contractId?: string;
+  id?: string;
+  pagingToken?: string;
+  topic: Array<string | StellarSdk.xdr.ScVal>;
+  value: string | StellarSdk.xdr.ScVal;
+  inSuccessfulContractCall?: boolean;
+  txHash?: string;
+}
+
+export interface HealthUpdateEvent {
+  type: "health_up";
+  assetCode: string;
+  healthScore: number;
+  ledger?: number;
+  txHash?: string;
+}
+
+export interface PriceDeviationEvent {
+  type: "price_dev";
+  assetCode: string;
+  deviationBps: bigint;
+  ledger?: number;
+  txHash?: string;
+}
+
+export interface CircuitBreakerEvent {
+  type: "em_pause";
+  caller: string;
+  reason: string;
+  ledger?: number;
+  txHash?: string;
+}
+
+export type BridgeWatchContractEvent =
+  | HealthUpdateEvent
+  | PriceDeviationEvent
+  | CircuitBreakerEvent;
+
+/** True if `event.topic[0]` decodes to the given topic symbol name. */
+function matchesTopic(
+  event: RawContractEvent,
+  topicName: string
+): boolean {
+  const first = event.topic[0];
+  if (first === undefined) return false;
+  try {
+    return parseScvSymbol(toScVal(first)) === topicName;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as a `health_up` event, or returns `null`
+ * if it isn't one (wrong topic, or malformed).
+ */
+export function parseHealthUpdateEvent(
+  event: unknown
+): HealthUpdateEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, HEALTH_UPDATE_EVENT_TOPIC)) return null;
+  const assetCodeTopic = raw.topic[1];
+  if (assetCodeTopic === undefined) return null;
+  try {
+    return {
+      type: "health_up",
+      assetCode: parseScvString(toScVal(assetCodeTopic)),
+      healthScore: parseScvU32(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as a `price_dev` event, or returns `null`
+ * if it isn't one (wrong topic, or malformed).
+ */
+export function parsePriceDeviationEvent(
+  event: unknown
+): PriceDeviationEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, PRICE_DEVIATION_EVENT_TOPIC)) return null;
+  const assetCodeTopic = raw.topic[1];
+  if (assetCodeTopic === undefined) return null;
+  try {
+    return {
+      type: "price_dev",
+      assetCode: parseScvString(toScVal(assetCodeTopic)),
+      deviationBps: parseScvI128(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as an `em_pause` (circuit breaker) event,
+ * or returns `null` if it isn't one (wrong topic, or malformed).
+ */
+export function parseCircuitBreakerEvent(
+  event: unknown
+): CircuitBreakerEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, CIRCUIT_BREAKER_EVENT_TOPIC)) return null;
+  const callerTopic = raw.topic[1];
+  if (callerTopic === undefined) return null;
+  try {
+    return {
+      type: "em_pause",
+      caller: parseScvAddress(toScVal(callerTopic)),
+      reason: parseScvString(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload into whichever typed event it matches, or
+ * `null` if it's none of the three known topics — lets a single `onEvent`
+ * handler dispatch on `.type` instead of calling each `parseXxxEvent`
+ * individually.
+ *
+ * @example
+ * sdk.subscribeToEvents({
+ *   onEvent: (raw) => {
+ *     const event = parseBridgeWatchEvent(raw);
+ *     if (!event) return;
+ *     switch (event.type) {
+ *       case "health_up": return handleHealthUpdate(event);
+ *       case "price_dev": return handlePriceDeviation(event);
+ *       case "em_pause": return handleCircuitBreaker(event);
+ *     }
+ *   },
+ * });
+ */
+export function parseBridgeWatchEvent(
+  event: unknown
+): BridgeWatchContractEvent | null {
+  return (
+    parseHealthUpdateEvent(event) ??
+    parsePriceDeviationEvent(event) ??
+    parseCircuitBreakerEvent(event)
+  );
 }

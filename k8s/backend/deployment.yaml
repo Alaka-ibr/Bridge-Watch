@@ -18,6 +18,19 @@ spec:
         app.kubernetes.io/component: backend
     spec:
       serviceAccountName: bridge-watch
+      # Spreads replicas across zones so a single zone/node-pool failure or a
+      # cluster node drain can't take down every backend pod at once — the
+      # PodDisruptionBudget below only protects against voluntary
+      # evictions draining pods faster than minAvailable allows; it does
+      # nothing if the scheduler already placed every replica in one zone
+      # (issue #1293).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: bridge-watch-backend
       containers:
         - name: backend
           image: ghcr.io/stellabridge/bridge-watch-backend:latest
@@ -28,62 +41,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: bridge-watch-config
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: POSTGRES_PASSWORD
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: REDIS_PASSWORD
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: JWT_SECRET
-            - name: API_KEY_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: API_KEY_SECRET
-            - name: CIRCLE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: CIRCLE_API_KEY
-            - name: COINBASE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: COINBASE_API_KEY
-            - name: COINBASE_API_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: COINBASE_API_SECRET
-            - name: SMTP_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: SMTP_HOST
-            - name: SMTP_USER
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: SMTP_USER
-            - name: SMTP_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: bridge-watch-secrets
-                  key: SMTP_PASSWORD
+          volumeMounts:
+            - name: secrets
+              mountPath: /etc/secrets
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /health/live
@@ -118,3 +79,7 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
+      volumes:
+        - name: secrets
+          secret:
+            secretName: bridge-watch-secrets
