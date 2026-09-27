@@ -203,6 +203,9 @@ export class BridgeWatchContractSdk {
     };
 
     const run = async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, minBackoffMs);
+      });
       while (active) {
         try {
           const response = await (this.server as unknown as {

@@ -27,6 +27,12 @@ import { backfillRoutes } from "./backfill.routes.js";
 import { evidenceBundleRoutes } from "./evidenceBundle.routes.js";
 // #1184 — Queue Priority Fairness
 import { queueFairnessRoutes } from "./queueFairness.routes.js";
+// #1199 — Contract Event Subscription Registry
+import { contractEventSubscriptionRegistryRoutes } from "./contractEventSubscriptionRegistry.routes.js";
+// #1190 — Secret Provider Health Checks
+import { secretProviderHealthRoutes } from "./secretProviderHealth.routes.js";
+// #1191 — Container Resource Utilization Dashboard
+import { containerResourceMetricsRoutes } from "./containerResourceMetrics.routes.js";
 
 export async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Core routes: health, websocket, config, preferences, caching
@@ -102,4 +108,13 @@ export async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // #1184 — Queue Priority Fairness
   server.register(queueFairnessRoutes, { prefix: "/api/v1/admin/queue-fairness" });
+
+  // #1199 — Contract Event Subscription Registry
+  server.register(contractEventSubscriptionRegistryRoutes, { prefix: "/api/v1/contract-subscriptions" });
+
+  // #1190 — Secret Provider Health Checks
+  server.register(secretProviderHealthRoutes, { prefix: "/api/v1/secret-providers" });
+
+  // #1191 — Container Resource Utilization Dashboard
+  server.register(containerResourceMetricsRoutes, { prefix: "/api/v1/container-metrics" });
 }

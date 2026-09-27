@@ -5,3 +5,4 @@ export * from "./contract";
 export * from "./testing";
 export * from "./compatibility";
 export * from "./pagination";
+export * from "./resilience";

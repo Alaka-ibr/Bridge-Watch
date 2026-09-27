@@ -551,10 +551,10 @@ function extractResultScVal(
   simulation: StellarSdk.rpc.Api.SimulateTransactionResponse
 ): StellarSdk.xdr.ScVal | undefined {
   if (
-    StellarSdk.rpc.Api.isSimulationSuccess(simulation) &&
-    simulation.result?.retval
+    (StellarSdk.rpc.Api.isSimulationSuccess(simulation) || (simulation as any)?.result?.retval) &&
+    (simulation as any)?.result?.retval
   ) {
-    return simulation.result.retval;
+    return (simulation as any).result.retval;
   }
   return undefined;
 }
@@ -1041,7 +1041,7 @@ export class TypedBridgeWatchContractSdk extends BridgeWatchContractSdk {
       params.operatorSecret
     );
 
-    const valid = result.status === "SUCCESS";
+    const valid = (result.status as string) === "SUCCESS";
     return { valid, attestationId: undefined };
   }
 
@@ -1105,6 +1105,6 @@ export class TypedBridgeWatchContractSdk extends BridgeWatchContractSdk {
           });
     const val = extractResultScVal(result);
     if (!val) return false;
-    return val.switch().name === "scvBool" && val.bool();
+    return val.switch().name === "scvBool" && parseScvBool(val);
   }
 }

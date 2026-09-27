@@ -149,7 +149,7 @@ describe("BridgeWatchContractSdk - subscribeToEvents with exponential backoff", 
     expect(callCount).toBe(2);
 
     // Success - should reset
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(2200);
     expect(callCount).toBe(3);
     expect(onBackoffStateChange).toHaveBeenCalledWith(
       expect.objectContaining({ isBackingOff: false, consecutiveFailures: 0 })
@@ -302,7 +302,7 @@ describe("BridgeWatchContractSdk - subscribeToEvents with exponential backoff", 
     expect(onError).toHaveBeenCalledTimes(1);
 
     // Third call succeeds again
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(1100);
     expect(onEvent).toHaveBeenCalledTimes(3);
     expect(onError).toHaveBeenCalledTimes(1);
 
