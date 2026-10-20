@@ -12,6 +12,7 @@ import { registerRoutes } from "./api/routes/index.js";
 import { registerValidation } from "./api/middleware/validation.js";
 import { registerMetrics } from "./api/middleware/metrics.js";
 import { startBridgeVerificationJob } from "./jobs/verification.job.js";
+import { startMigrationDriftMonitor, stopMigrationDriftMonitor } from "./jobs/migrationDrift.job.js";
 import { wsServer } from "./api/websocket/websocket.server.js";
 import {
   registerRateLimiting,
@@ -228,6 +229,9 @@ async function start() {
     // Initialize background jobs
     await initJobSystem();
 
+    // Monitor for pending database migrations (#1426)
+    startMigrationDriftMonitor();
+
     // Initialize webhook delivery worker
     await initWebhookWorker();
 
@@ -261,6 +265,7 @@ async function start() {
       }
     }
 
+    stopMigrationDriftMonitor();
     await wsServer.shutdown();
     await server.close();
     await JobQueue.getInstance().stop();
