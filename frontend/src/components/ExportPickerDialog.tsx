@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AssetWithHealth, Bridge, ExportFormat, ExportDataType, ExportRecord } from "../types";
 import { requestExport, getExportStatus, generateExportDownloadLink } from "../services/api";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 const STORAGE_KEY = "bridge-watch.export-picker.v1";
 
@@ -81,6 +82,12 @@ export default function ExportPickerDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [recentExports, setRecentExports] = useState<ExportRecord[]>([]);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+  const contentRef = useFocusTrap({
+    isActive: open,
+    onEscape: onClose,
+    returnFocusOnDeactivate: true,
+  });
 
   const selectedAssetLabels = useMemo(() => {
     const assets = new Set(preferences.assetCodes);
@@ -179,12 +186,18 @@ export default function ExportPickerDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6">
-      <div className="relative mx-auto w-full max-w-4xl rounded-3xl border border-stellar-border bg-stellar-card shadow-2xl">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 px-4 py-6" role="presentation">
+      <div
+        ref={contentRef as React.RefObject<HTMLDivElement>}
+        className="relative mx-auto w-full max-w-4xl rounded-3xl border border-stellar-border bg-stellar-card shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-dialog-title"
+      >
         <div className="flex flex-col gap-6 p-6 lg:p-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-semibold text-white">Export data</h2>
+              <h2 id="export-dialog-title" className="text-2xl font-semibold text-white">Export data</h2>
               <p className="mt-2 text-sm text-stellar-text-secondary">
                 Choose the format, scope, and date range for the export. The picker saves your last selection and shows live status while the export is processed.
               </p>
