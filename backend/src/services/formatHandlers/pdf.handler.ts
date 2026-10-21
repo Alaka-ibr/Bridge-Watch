@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import type { ExportDataType } from "../../types/export.types.js";
+import type { ExportDataType, ExportDataRecord } from "../../types/export.types.js";
 import { logger } from "../../utils/logger.js";
 
 /**
@@ -25,14 +25,14 @@ export class PDFHandler {
    * @returns Readable stream of PDF data
    */
   async generate(
-    dataStream: AsyncIterable<any>,
+    dataStream: AsyncIterable<ExportDataRecord>,
     dataType: ExportDataType,
     _compress: boolean
   ): Promise<NodeJS.ReadableStream> {
     logger.info({ dataType }, "Generating PDF export");
 
     // Buffer all records (PDF cannot be truly streamed)
-    const records: any[] = [];
+    const records: ExportDataRecord[] = [];
     let count = 0;
 
     for await (const record of dataStream) {
@@ -57,7 +57,7 @@ export class PDFHandler {
     });
 
     // Apply template based on data type
-    this.applyTemplate(doc, dataType, records);
+    this.applyTemplate(doc, dataType, records as any[]);
 
     // Finalize PDF
     doc.end();

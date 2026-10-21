@@ -11,7 +11,7 @@ function makeQB(rows: Record<string, unknown>[] = []) {
   const qb: Record<string, unknown> = {};
   for (const m of [
     "select", "where", "andWhere", "andWhereRaw", "orWhere", "orWhereRaw",
-    "whereIn", "whereNull", "orderBy", "limit", "groupBy", "having",
+    "whereIn", "whereNull", "orderBy", "limit", "groupBy", "having", "timeout",
   ]) {
     qb[m] = vi.fn().mockReturnValue(qb);
   }
@@ -30,7 +30,9 @@ function makeQB(rows: Record<string, unknown>[] = []) {
 let metadataRows: Record<string, unknown>[] = [];
 let documentRows: Record<string, unknown>[] = [];
 let analyticsRows: Record<string, unknown>[] = [];
-const analyticsInsert = vi.fn().mockResolvedValue(undefined);
+const analyticsInsert = vi.fn().mockReturnValue({
+  timeout: vi.fn().mockResolvedValue(undefined),
+});
 
 vi.mock("../../src/database/connection.js", () => ({
   getDatabase: vi.fn(() => {
@@ -294,6 +296,29 @@ describe("SearchService", () => {
   // ── search() with results ─────────────────────────────────────────────────
 
   describe("search — result ranking and filtering", () => {
+    it("defaults to 25 results and rejects pagination outside service bounds", async () => {
+      documentRows = Array.from({ length: 30 }, (_, i) =>
+        mockBridgeDoc({ entity_id: String(i), title: `Bridge ${i}`, search_tokens: "bridge query" })
+      );
+      metadataRows = [readyMetadata("bridge")];
+      vi.spyOn(service as any, "trackSearchAnalytics").mockResolvedValue(undefined);
+
+      const result = await service.search({ query: "bridge query", type: "bridge" });
+      expect(result.results).toHaveLength(25);
+      await expect(service.search({ query: "bridge", limit: 101 })).rejects.toThrow(RangeError);
+      await expect(service.search({ query: "bridge", offset: -1 })).rejects.toThrow(RangeError);
+      await expect(service.search({ query: "bridge", offset: 1001 })).rejects.toThrow(RangeError);
+    });
+
+    it("returns the database total independently of the current page", async () => {
+      documentRows = [mockBridgeDoc({ total_count: "137" })];
+      metadataRows = [readyMetadata("bridge")];
+      vi.spyOn(service as any, "trackSearchAnalytics").mockResolvedValue(undefined);
+
+      const result = await service.search({ query: "bridge", type: "bridge", limit: 1 });
+      expect(result.total).toBe(137);
+    });
+
     it("returns results sorted by relevance (title match first)", async () => {
       documentRows = [
         mockBridgeDoc({

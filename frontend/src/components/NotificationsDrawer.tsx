@@ -5,6 +5,8 @@ import {
   type Notification,
   type NotificationPriority,
 } from "../stores/notificationStore";
+import { useUserPreferencesStore } from "../stores/userPreferencesStore";
+import { useAlertNotifier } from "../hooks/useAlertNotifier";
 
 interface NotificationsDrawerProps {
   open: boolean;
@@ -61,6 +63,17 @@ export default function NotificationsDrawer({
   const clearReadNotifications = useNotificationStore(
     (state) => state.clearReadNotifications
   );
+
+  const soundEnabled = useUserPreferencesStore((state) => state.soundEnabled);
+  const desktopNotificationsEnabled = useUserPreferencesStore(
+    (state) => state.notificationsEnabled
+  );
+  const setPreference = useUserPreferencesStore((state) => state.setPreference);
+
+  const notifier = useAlertNotifier({
+    soundEnabled,
+    desktopEnabled: desktopNotificationsEnabled,
+  });
 
   const groupedNotifications = useMemo(() => {
     const visibleNotifications = notifications.filter((n) => !n.dismissed);
@@ -240,6 +253,100 @@ export default function NotificationsDrawer({
             >
               Clear read
             </button>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 border-t border-stellar-border pt-3">
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="notifications-sound-toggle"
+                className="text-xs text-stellar-text-secondary"
+              >
+                Audible alerts
+              </label>
+              <button
+                id="notifications-sound-toggle"
+                type="button"
+                role="switch"
+                aria-checked={soundEnabled}
+                disabled={!notifier.soundSupported}
+                onClick={() => {
+                  // Arm audio in the same gesture, otherwise the browser keeps
+                  // the AudioContext suspended and the first chime is silent.
+                  notifier.enableSound();
+                  setPreference("soundEnabled", !soundEnabled);
+                }}
+                className={`relative h-5 w-9 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-blue disabled:cursor-not-allowed disabled:opacity-40 ${
+                  soundEnabled ? "bg-stellar-blue" : "bg-stellar-border"
+                }`}
+              >
+                <span className="sr-only">
+                  {soundEnabled ? "Audible alerts on" : "Audible alerts off"}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                    soundEnabled ? "translate-x-[1.125rem]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {notifier.soundSupported && soundEnabled && !notifier.soundUnlocked && (
+              <p className="text-xs text-yellow-400">
+                Tap the toggle once to arm sound — browsers block audio until you interact.
+              </p>
+            )}
+            {!notifier.soundSupported && (
+              <p className="text-xs text-stellar-text-secondary">
+                Web Audio is unavailable in this browser, so audible alerts are disabled.
+              </p>
+            )}
+
+            <div className="flex items-center justify-between gap-3">
+              <label
+                htmlFor="notifications-desktop-toggle"
+                className="text-xs text-stellar-text-secondary"
+              >
+                Desktop notifications
+              </label>
+              <button
+                id="notifications-desktop-toggle"
+                type="button"
+                role="switch"
+                aria-checked={desktopNotificationsEnabled}
+                disabled={!notifier.desktopSupported}
+                onClick={() => {
+                  if (!desktopNotificationsEnabled) {
+                    // Only ask on the enabling gesture; browsers reject
+                    // permission prompts that are not user-initiated.
+                    void notifier.requestDesktopPermission();
+                  }
+                  setPreference("notificationsEnabled", !desktopNotificationsEnabled);
+                }}
+                className={`relative h-5 w-9 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-stellar-blue disabled:cursor-not-allowed disabled:opacity-40 ${
+                  desktopNotificationsEnabled ? "bg-stellar-blue" : "bg-stellar-border"
+                }`}
+              >
+                <span className="sr-only">
+                  {desktopNotificationsEnabled
+                    ? "Desktop notifications on"
+                    : "Desktop notifications off"}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                    desktopNotificationsEnabled ? "translate-x-[1.125rem]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {notifier.desktopPermission === "denied" && (
+              <p className="text-xs text-red-400">
+                Browser notifications are blocked. Allow them in your browser site settings to
+                receive alerts while this tab is in the background.
+              </p>
+            )}
           </div>
         </div>
 

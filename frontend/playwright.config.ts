@@ -20,6 +20,7 @@ export default defineConfig({
   reporter: [["list"], ["json", { outputFile: "visual-results.json" }]],
   use: {
     baseURL,
+    serviceWorkers: "block",
     headless: true,
     locale: "en-US",
     colorScheme: "dark",
@@ -42,7 +43,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 4173",
+    command: process.env.PLAYWRIGHT_SERVER_CMD ?? "npm run dev -- --host 127.0.0.1 --port 4173",
     cwd: configDir,
     url: baseURL,
     reuseExistingServer: !process.env.CI,

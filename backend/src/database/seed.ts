@@ -24,8 +24,9 @@
 
 import { getDatabase } from "./connection.js";
 import { logger } from "../utils/logger.js";
+import { config } from "../config/index.js";
 
-const env = process.env.NODE_ENV ?? "development";
+const env = config.NODE_ENV ?? "development";
 
 function isForced(): boolean {
   return process.argv.includes("--force");

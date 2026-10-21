@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { EventEmitter } from "events";
 import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
@@ -11,6 +13,90 @@ import { redactionDecisionService } from "../privacy/redactionDecision.service.j
 import { retryPolicyService } from "./retryPolicy.service.js";
 
 const fetch = globalThis.fetch;
+
+type AddressLookup = (
+  hostname: string
+) => Promise<Array<{ address: string; family: number }>>;
+
+const defaultAddressLookup: AddressLookup = (hostname) =>
+  lookup(hostname, { all: true, verbatim: true });
+
+function isBlockedAddress(address: string): boolean {
+  const normalized = address.toLowerCase().split("%")[0];
+  if (isIP(normalized) === 4) {
+    const [a, b] = normalized.split(".").map(Number);
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    );
+  }
+
+  if (isIP(normalized) === 6) {
+    return (
+      normalized === "::" ||
+      normalized === "::1" ||
+      normalized.startsWith("fc") ||
+      normalized.startsWith("fd") ||
+      normalized.startsWith("fe8") ||
+      normalized.startsWith("fe9") ||
+      normalized.startsWith("fea") ||
+      normalized.startsWith("feb") ||
+      normalized.startsWith("::ffff:")
+    );
+  }
+
+  return true;
+}
+
+/** Resolve and reject webhook destinations that could reach non-public networks. */
+export async function validateWebhookUrl(
+  rawUrl: string,
+  options: { nodeEnv?: string; lookupAddresses?: AddressLookup } = {}
+): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Webhook URL must be a valid absolute URL");
+  }
+
+  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV;
+  const allowedProtocols = nodeEnv === "production" ? ["https:"] : ["https:", "http:"];
+  if (!allowedProtocols.includes(parsed.protocol)) {
+    throw new Error(
+      nodeEnv === "production"
+        ? "Webhook URL must use HTTPS in production"
+        : "Webhook URL must use HTTP or HTTPS"
+    );
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Webhook URL must not include credentials");
+  }
+
+  const hostname = parsed.hostname
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^\[|\]$/g, "");
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new Error("Webhook URL must resolve to a public address");
+  }
+
+  const literalFamily = isIP(hostname);
+  const addresses = literalFamily
+    ? [{ address: hostname, family: literalFamily }]
+    : await (options.lookupAddresses ?? defaultAddressLookup)(hostname);
+  if (addresses.length === 0 || addresses.some(({ address }) => isBlockedAddress(address))) {
+    throw new Error("Webhook URL must resolve only to public addresses");
+  }
+
+  return parsed;
+}
 
 // =============================================================================
 // TYPES & INTERFACES
@@ -801,6 +887,7 @@ export class WebhookService extends EventEmitter {
   }): Promise<WebhookEndpoint> {
     const db = getDatabase();
     const secret = this.generateSecret();
+    await validateWebhookUrl(params.url);
 
     const [endpoint] = await db("webhook_endpoints")
       .insert({
@@ -849,7 +936,10 @@ export class WebhookService extends EventEmitter {
     const db = getDatabase();
     const updateData: Record<string, any> = { updated_at: new Date() };
 
-    if (updates.url !== undefined) updateData.url = updates.url;
+    if (updates.url !== undefined) {
+      await validateWebhookUrl(updates.url);
+      updateData.url = updates.url;
+    }
     if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.description !== undefined) updateData.description = updates.description;
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
@@ -1134,10 +1224,12 @@ export class WebhookService extends EventEmitter {
     const startTime = Date.now();
 
     try {
+      await validateWebhookUrl(endpoint.url);
       const response = await fetch(endpoint.url, {
         method: "POST",
         headers,
         body: payloadString,
+        redirect: "manual",
         signal: AbortSignal.timeout(30000), // 30s timeout
       });
 
@@ -1468,10 +1560,12 @@ export class WebhookService extends EventEmitter {
     const startTime = Date.now();
 
     try {
+      await validateWebhookUrl(endpoint.url);
       const response = await fetch(endpoint.url, {
         method: "POST",
         headers,
         body: payloadString,
+        redirect: "manual",
         signal: AbortSignal.timeout(30000),
       });
 

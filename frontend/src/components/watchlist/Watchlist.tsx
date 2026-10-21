@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useRef, useState } from "react";
 import { useWatchlist } from "../../hooks/useWatchlist";
+import EmptyState from "../EmptyState";
 
 export default function Watchlist() {
   const {
@@ -147,7 +148,11 @@ export default function Watchlist() {
       {importError ? <p className="text-xs text-red-400">{importError}</p> : null}
 
       {!activeWatchlist || activeWatchlist.assets.length === 0 ? (
-        <p className="text-sm text-stellar-text-secondary">No assets in this watchlist yet.</p>
+        <EmptyState
+          compact
+          title="No assets in this watchlist yet"
+          description="Open an asset page and add it to this watchlist to see it here."
+        />
       ) : (
         <ul className="space-y-2">
           {activeWatchlist.assets.map((symbol) => (

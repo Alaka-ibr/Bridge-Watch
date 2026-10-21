@@ -18,6 +18,16 @@ spec:
         app.kubernetes.io/component: frontend
     spec:
       serviceAccountName: bridge-watch
+      # See backend/deployment.yaml — spreads replicas across zones so a
+      # single zone/node-pool failure can't take down every frontend pod
+      # (issue #1293).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: bridge-watch-frontend
       containers:
         - name: frontend
           image: ghcr.io/stellabridge/bridge-watch-frontend:latest

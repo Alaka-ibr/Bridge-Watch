@@ -55,3 +55,6 @@ contracts/soroban/test_snapshots/
 *.pem
 .cache/
 tmp/
+
+# Local decrypted k8s secret working copy
+k8s/secret.dec.yaml

@@ -16,6 +16,7 @@ import {
   updateReconciliationTriage,
 } from "../services/api";
 import { formatUtcDate } from "../utils/formatUtcDate";
+import { SkeletonTable } from "../components/Skeleton";
 import type {
   CommitmentVerificationStatus,
   DriftSeverity,
@@ -472,42 +473,40 @@ export default function Reconciliation() {
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-stellar-border text-left text-stellar-text-secondary">
-                  <th scope="col" className="px-4 py-3 font-medium">Pair</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Severity</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Mismatch</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Trend</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Triage</th>
-                  <th scope="col" className="px-4 py-3 font-medium">Last seen</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stellar-border">
-                {summaryQuery.isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-stellar-text-secondary">
-                      Loading reconciliation drift
-                    </td>
+            {summaryQuery.isLoading ? (
+              <SkeletonTable rows={5} columns={6} ariaLabel="Loading reconciliation drift" />
+            ) : (
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b border-stellar-border text-left text-stellar-text-secondary">
+                    <th scope="col" className="px-4 py-3 font-medium">Pair</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Severity</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Mismatch</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Trend</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Triage</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Last seen</th>
                   </tr>
-                ) : summaries.length > 0 ? (
-                  summaries.map((summary) => (
-                    <SummaryRow
-                      key={summary.id}
-                      summary={summary}
-                      active={summary.latestRun.id === selectedRun?.id}
-                      onSelect={setSelectedMismatchId}
-                    />
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-stellar-text-secondary">
-                      No reconciliation drift found for the selected filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-stellar-border">
+                  {summaries.length > 0 ? (
+                    summaries.map((summary) => (
+                      <SummaryRow
+                        key={summary.id}
+                        summary={summary}
+                        active={summary.latestRun.id === selectedRun?.id}
+                        onSelect={setSelectedMismatchId}
+                      />
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-stellar-text-secondary">
+                        No reconciliation drift found for the selected filters.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </section>
 

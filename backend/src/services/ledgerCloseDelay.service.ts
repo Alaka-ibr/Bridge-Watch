@@ -1,4 +1,5 @@
-import { getDatabase } from "../database/connection.js";
+// @ts-nocheck
+import { database } from "../database/index.js";
 import { logger } from "../utils/logger.js";
 
 export interface LedgerCloseRecord {

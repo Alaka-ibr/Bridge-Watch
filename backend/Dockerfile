@@ -46,6 +46,8 @@ COPY package.json ./
 RUN --mount=type=cache,sharing=locked,target=/root/.npm npm install --omit=dev && npm cache clean --force || true
 
 COPY --from=builder /app/dist ./dist
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
 # Non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
@@ -56,4 +58,7 @@ EXPOSE 3001 3002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget -qO- http://localhost:3001/health || exit 1
 
+# entrypoint.sh sources a mounted Secret volume (issue #1293) into env vars
+# before exec'ing the app, so no application code has to change.
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["node", "dist/index.js"]

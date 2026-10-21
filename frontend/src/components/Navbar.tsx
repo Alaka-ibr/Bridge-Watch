@@ -51,7 +51,7 @@ export default function Navbar() {
                 Bridge Watch
               </Link>
 
-              <div className="hidden items-center gap-1 xl:flex" aria-label="Primary navigation">
+              <nav className="hidden items-center gap-1 xl:flex" aria-label="Primary">
                 {desktopNavItems.slice(0, 8).map((item) => {
                   const active = isNavItemActive(location.pathname, item.to);
                   return (
@@ -81,7 +81,7 @@ export default function Navbar() {
                 >
                   Status
                 </Link>
-              </div>
+              </nav>
             </div>
 
             <div className="flex items-center gap-3">
@@ -141,7 +141,7 @@ export default function Navbar() {
                 aria-expanded={isNotificationsOpen}
                 aria-controls="notifications-drawer"
               >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -174,7 +174,7 @@ export default function Navbar() {
                 aria-label="User settings"
                 title="User settings"
               >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"

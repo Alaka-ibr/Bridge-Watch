@@ -8,6 +8,7 @@
 import type { Knex } from "knex";
 import { OutboxProducer } from "./eventProducer.js";
 import { logger } from "../utils/logger.js";
+import { config } from "../config/index.js";
 
 // Example 1: Alert Service Migration
 // BEFORE: Direct webhook dispatch (non-transactional)
@@ -311,7 +312,7 @@ export class LegacyDiscordService {
     const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
-        "Authorization": `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        "Authorization": `Bot ${config.DISCORD_BOT_TOKEN}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ embeds: [embed] }),

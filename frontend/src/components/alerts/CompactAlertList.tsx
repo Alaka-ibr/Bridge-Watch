@@ -5,6 +5,7 @@ import {
   type IncidentSeverity,
   type IncidentStatus,
 } from "../../hooks/useIncidentFeed";
+import EmptyState from "../EmptyState";
 
 type SortField = "severity" | "time" | "status" | "title";
 type SortDir = "asc" | "desc";
@@ -732,27 +733,18 @@ export default function CompactAlertList({
 
         {/* Empty state */}
         {!isLoading && !error && processedIncidents.length === 0 && (
-          <div className="p-8 text-center">
-            <svg
-              className="w-10 h-10 mx-auto mb-3 text-stellar-text-muted"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <p className="font-medium text-white text-sm">No alerts found</p>
-            <p className="text-xs text-stellar-text-muted mt-1">
-              {dismissedIds.size > 0
-                ? `${dismissedIds.size} alert${dismissedIds.size !== 1 ? "s" : ""} dismissed. Adjust filters to see more.`
-                : "All bridges are operating normally."}
-            </p>
+          <div className="p-4">
+            <EmptyState
+              compact
+              title="No alerts configured"
+              description={
+                dismissedIds.size > 0
+                  ? `${dismissedIds.size} alert${dismissedIds.size !== 1 ? "s" : ""} dismissed. Adjust filters to see more.`
+                  : "All bridges are operating normally. Set up your first alert to get notified about incidents."
+              }
+              actionLabel="Set up your first alert"
+              actionHref="/admin/alert-routing"
+            />
           </div>
         )}
 

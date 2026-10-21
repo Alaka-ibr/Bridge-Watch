@@ -650,53 +650,124 @@ export class AdminRotationService {
       .update({ status: "expired", updated_at: new Date() });
   }
 
-  private mapAdminRow(row: any): AdminAccount {
+  private mapAdminRow(row: AdminAccountRow): AdminAccount {
     return {
       id: row.id,
       address: row.address,
       name: row.name,
       email: row.email,
-      roles: JSON.parse(row.roles),
-      isActive: row.is_active,
+      roles: parseJsonField<AdminRole[]>(row.roles, []),
+      isActive: Boolean(row.is_active),
       addedBy: row.added_by,
-      activatedAt: row.activated_at,
-      deactivatedAt: row.deactivated_at,
+      activatedAt: parseNullableDateField(row.activated_at),
+      deactivatedAt: parseNullableDateField(row.deactivated_at),
       deactivatedBy: row.deactivated_by,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: parseDateField(row.created_at),
+      updatedAt: parseDateField(row.updated_at),
     };
   }
 
-  private mapEventRow(row: any): AdminRotationEvent {
+  private mapEventRow(row: AdminRotationEventRow): AdminRotationEvent {
     return {
       id: row.id,
       eventType: row.event_type,
       adminAddress: row.admin_address,
       actorAddress: row.actor_address,
-      beforeState: row.before_state ? JSON.parse(row.before_state) : null,
-      afterState: row.after_state ? JSON.parse(row.after_state) : null,
+      beforeState: parseJsonField<Record<string, unknown> | null>(row.before_state, null),
+      afterState: parseJsonField<Record<string, unknown> | null>(row.after_state, null),
       reason: row.reason,
-      metadata: JSON.parse(row.metadata),
-      createdAt: row.created_at,
+      metadata: parseJsonField<Record<string, unknown>>(row.metadata, {}),
+      createdAt: parseDateField(row.created_at),
     };
   }
 
-  private mapProposalRow(row: any): AdminRotationProposal {
+  private mapProposalRow(row: AdminRotationProposalRow): AdminRotationProposal {
     return {
       id: row.id,
       proposalType: row.proposal_type,
       targetAddress: row.target_address,
       proposedBy: row.proposed_by,
-      proposedChanges: JSON.parse(row.proposed_changes),
+      proposedChanges: parseJsonField<Record<string, unknown>>(row.proposed_changes, {}),
       status: row.status,
-      approvals: JSON.parse(row.approvals),
-      requiredApprovals: row.required_approvals,
-      expiresAt: row.expires_at,
-      executedAt: row.executed_at,
+      approvals: parseJsonField<string[]>(row.approvals, []),
+      requiredApprovals: Number(row.required_approvals),
+      expiresAt: parseDateField(row.expires_at),
+      executedAt: parseNullableDateField(row.executed_at),
       executedBy: row.executed_by,
       rejectionReason: row.rejection_reason,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: parseDateField(row.created_at),
+      updatedAt: parseDateField(row.updated_at),
     };
   }
 }
+
+export interface AdminAccountRow {
+  id: string;
+  address: string;
+  name: string;
+  email: string | null;
+  roles: string | string[];
+  is_active: boolean | number;
+  added_by: string;
+  activated_at: Date | string | null;
+  deactivated_at: Date | string | null;
+  deactivated_by: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+export interface AdminRotationEventRow {
+  id: string;
+  event_type: AdminRotationEventType;
+  admin_address: string;
+  actor_address: string;
+  before_state: string | Record<string, unknown> | null;
+  after_state: string | Record<string, unknown> | null;
+  reason: string | null;
+  metadata: string | Record<string, unknown>;
+  created_at: Date | string;
+}
+
+export interface AdminRotationProposalRow {
+  id: string;
+  proposal_type: RotationProposalType;
+  target_address: string;
+  proposed_by: string;
+  proposed_changes: string | Record<string, unknown>;
+  status: RotationProposalStatus;
+  approvals: string | string[];
+  required_approvals: number;
+  expires_at: Date | string;
+  executed_at: Date | string | null;
+  executed_by: string | null;
+  rejection_reason: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+function parseJsonField<T>(field: unknown, fallback: T): T {
+  if (field === null || field === undefined) return fallback;
+  if (typeof field === "object") return field as T;
+  if (typeof field === "string") {
+    try {
+      return JSON.parse(field) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function parseDateField(field: Date | string | number | unknown): Date {
+  if (field instanceof Date) return field;
+  if (typeof field === "string" || typeof field === "number") return new Date(field);
+  return new Date();
+}
+
+function parseNullableDateField(field: Date | string | number | null | undefined): Date | null {
+  if (!field) return null;
+  if (field instanceof Date) return field;
+  return new Date(field as string | number);
+}
+
+

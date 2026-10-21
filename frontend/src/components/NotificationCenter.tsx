@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useNotificationContext } from "../hooks/useNotificationContext";
 import type { Notification } from "../context/NotificationContext.types";
@@ -10,6 +11,17 @@ interface NotificationCenterProps {
 
 export default function NotificationCenter({ isOpen, onClose }: NotificationCenterProps) {
   const { notifications, markAsRead, markAllAsRead, clearAll, clearRead, unreadCount } = useNotificationContext();
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    panelRef.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -38,7 +50,10 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
       {/* Backdrop for mobile/closing */}
       <div className="fixed inset-0 z-40 md:hidden" onClick={onClose}></div>
       
-      <div className="absolute right-0 top-full mt-2 w-80 md:w-96 max-h-[calc(100vh-5rem)] bg-stellar-card border border-stellar-border rounded-lg shadow-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+      <div ref={panelRef} role="dialog" aria-modal="false" aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ""}`} className="absolute right-0 top-full mt-2 w-80 md:w-96 max-h-[calc(100vh-5rem)] bg-stellar-card border border-stellar-border rounded-lg shadow-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div aria-live="polite" aria-atomic="true" className="sr-only">
+          {unreadCount > 0 ? `${unreadCount} unread notifications` : "No unread notifications"}
+        </div>
         <div className="p-4 border-b border-stellar-border flex justify-between items-center bg-stellar-dark/50">
           <div>
             <h3 className="text-lg font-bold text-white">Notifications</h3>
@@ -61,9 +76,10 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
             </button>
             <button
               onClick={onClose}
+              aria-label="Close notifications panel"
               className="text-stellar-text-secondary hover:text-white md:hidden"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>

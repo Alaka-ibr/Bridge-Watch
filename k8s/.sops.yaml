@@ -1,0 +1,8 @@
+creation_rules:
+  - path_regex: ".*secret.*\\.ya?ml$"
+    encrypted_regex: ".*"
+    kms: ["arn:aws:kms:REGION:ACCOUNT_ID:key/KMS_KEY_ID"]
+    pgp: []
+    azure_key_vault: []
+    gcp_kms: []
+    lastmodified: true

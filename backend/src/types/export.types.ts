@@ -138,3 +138,45 @@ export interface PaginatedExports {
   limit: number;
   totalPages: number;
 }
+
+/**
+ * Concrete record shapes streamed into format handlers.  These represent the
+ * three data categories supported by the format handlers and are derived from
+ * the templates used by `pdf.handler.ts` and `json.handler.ts`.
+ *
+ * NOTE: We avoid reusing the DB `ExportRecord` name here to prevent a type
+ * collision; this alias is for in-flight export rows (analytics / transactions
+ * / health metrics) consumed by handlers.
+ */
+export interface AnalyticsRecord {
+  time: string | number | Date;
+  symbol?: string;
+  source?: string;
+  price?: number | string;
+  volume_24h?: number | string;
+}
+
+export interface TransactionRecord {
+  bridge_id: string;
+  verified_at: string | number | Date;
+  sequence?: number | string;
+  leaf_hash?: string;
+  leaf_index?: number | string;
+  is_valid?: boolean;
+  proof_depth?: number | null;
+  job_id?: string | null;
+}
+
+export interface HealthMetricRecord {
+  symbol: string;
+  time: string | number | Date;
+  overall_score: number;
+  liquidity_depth_score: number;
+  price_stability_score: number;
+  bridge_uptime_score: number;
+  reserve_backing_score: number;
+  volume_trend_score: number;
+}
+
+export type ExportDataRecord = AnalyticsRecord | TransactionRecord | HealthMetricRecord;
+

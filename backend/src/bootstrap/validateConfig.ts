@@ -8,6 +8,7 @@
 
 import { getDatabase } from "../database/connection.js";
 import { createRedisClient } from "../config/redis.js";
+import { config } from "../config/index.js";
 import { ConfigService } from "../services/config-service/ConfigService.js";
 import { ConfigKey } from "../services/config-service/validators.js";
 import { logger } from "../utils/logger.js";
@@ -50,7 +51,7 @@ const REQUIRED_CONFIGS: ConfigKey[] = [
  * Throws an error if any required configuration is missing.
  */
 export async function validateStartupConfig(): Promise<void> {
-  const environment = process.env.NODE_ENV || "development";
+  const environment = config.NODE_ENV || "development";
   
   logger.info({ environment }, "Validating startup configuration...");
 
@@ -101,6 +102,33 @@ export async function validateStartupConfig(): Promise<void> {
       );
     }
 
+    // Additional type-specific checks (non-blocking schema validations)
+    try {
+      const slowThreshold = await configService.get("REQUEST_SLOW_THRESHOLD_MS", environment);
+      if (slowThreshold !== null && slowThreshold !== undefined) {
+        const val = Number(slowThreshold);
+        if (!Number.isFinite(val) || val <= 0) {
+          throw new Error("REQUEST_SLOW_THRESHOLD_MS must be a positive integer");
+        }
+      }
+    } catch (err) {
+      invalid.push({ key: "REQUEST_SLOW_THRESHOLD_MS", error: (err as Error).message });
+    }
+
+    try {
+      const discordToken = await configService.get("DISCORD_BOT_TOKEN", environment);
+      if (discordToken !== null && discordToken !== undefined && String(discordToken).trim() === "") {
+        throw new Error("DISCORD_BOT_TOKEN is set but empty");
+      }
+    } catch (err) {
+      invalid.push({ key: "DISCORD_BOT_TOKEN", error: (err as Error).message });
+    }
+
+    if (invalid.length > 0) {
+      logger.error({ invalid, environment }, "Invalid configurations (post-schema checks)");
+      throw new Error(invalid.map(({ key, error }) => `${key}: ${error}`).join("; "));
+    }
+
     logger.info(
       { environment, validated: REQUIRED_CONFIGS.length },
       "✅ Startup configuration validated successfully"
@@ -118,7 +146,7 @@ export async function validateStartupConfig(): Promise<void> {
  * Does not throw errors, allowing the application to start with defaults.
  */
 export async function validateOptionalConfig(): Promise<void> {
-  const environment = process.env.NODE_ENV || "development";
+  const environment = config.NODE_ENV || "development";
 
   const OPTIONAL_CONFIGS: ConfigKey[] = [
     "CIRCLE_API_KEY",

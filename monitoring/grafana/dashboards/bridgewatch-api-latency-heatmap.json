@@ -1,0 +1,191 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "bridgewatch-api-latency-heatmap",
+    "title": "Bridge Watch - API Endpoint Latency Heatmap",
+    "description": "Per-endpoint HTTP request latency heatmaps and percentile summaries derived from the http_request_duration_seconds Prometheus histogram.",
+    "tags": ["bridge-watch", "api", "latency", "heatmap"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "datasource",
+          "type": "datasource",
+          "label": "Datasource",
+          "query": "prometheus",
+          "current": {
+            "selected": false,
+            "text": "Prometheus",
+            "value": "Prometheus"
+          }
+        },
+        {
+          "name": "job",
+          "type": "query",
+          "label": "Job",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "query": {
+            "query": "label_values(up, job)",
+            "refId": "PromJob"
+          },
+          "refresh": 2,
+          "sort": 1,
+          "multi": false,
+          "includeAll": false,
+          "current": {
+            "selected": true,
+            "text": "bridge-watch-backend",
+            "value": "bridge-watch-backend"
+          }
+        },
+        {
+          "name": "route",
+          "type": "query",
+          "label": "Route",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "query": {
+            "query": "label_values(http_request_duration_seconds_bucket{job=\"$job\"}, route)",
+            "refId": "PromRoute"
+          },
+          "refresh": 2,
+          "sort": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Latency Heatmap (all routes)",
+        "type": "heatmap",
+        "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "sum by (le) (increase(http_request_duration_seconds_bucket{job=\"$job\", route=~\"$route\"}[1m]))",
+            "format": "heatmap",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "options": {
+          "calculate": false,
+          "yAxis": { "unit": "s", "decimals": 3 },
+          "color": {
+            "mode": "scheme",
+            "scheme": "Oranges",
+            "steps": 128
+          },
+          "tooltip": { "show": true, "yHistogram": false }
+        },
+        "description": "Bucket distribution of http_request_duration_seconds across all selected routes. Brighter cells = more requests at that latency."
+      },
+      {
+        "id": 2,
+        "title": "Latency Percentiles (p50 / p95 / p99)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"$job\", route=~\"$route\"}[5m])))",
+            "legendFormat": "p50"
+          },
+          {
+            "refId": "B",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"$job\", route=~\"$route\"}[5m])))",
+            "legendFormat": "p95"
+          },
+          {
+            "refId": "C",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"$job\", route=~\"$route\"}[5m])))",
+            "legendFormat": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "s", "decimals": 3 }
+        },
+        "options": {
+          "legend": { "displayMode": "list", "placement": "bottom" }
+        },
+        "description": "Quantile percentiles from http_request_duration_seconds."
+      },
+      {
+        "id": 3,
+        "title": "Request Rate by Route (req/s)",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "sum by (route) (rate(http_request_duration_seconds_count{job=\"$job\", route=~\"$route\"}[1m]))",
+            "legendFormat": "{{route}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "reqps", "decimals": 2 }
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }
+        },
+        "description": "Throughput per route — complements the heatmap by showing whether a hot latency cell is from high or low traffic."
+      },
+      {
+        "id": 4,
+        "title": "p99 Latency per Route (current)",
+        "type": "bargauge",
+        "gridPos": { "x": 0, "y": 18, "w": 24, "h": 6 },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "prometheus", "uid": "$datasource" },
+            "expr": "histogram_quantile(0.99, sum by (route, le) (rate(http_request_duration_seconds_bucket{job=\"$job\"}[5m])))",
+            "legendFormat": "{{route}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 0.2 },
+                { "color": "orange", "value": 0.5 },
+                { "color": "red", "value": 1.0 }
+              ]
+            }
+          }
+        },
+        "options": {
+          "orientation": "horizontal",
+          "reduceOptions": { "calcs": ["lastNotNull"] },
+          "displayMode": "gradient",
+          "showUnfilled": true
+        },
+        "description": "Current p99 per route — colour-coded green/yellow/orange/red by latency thresholds."
+      }
+    ]
+  },
+  "overwrite": true
+}

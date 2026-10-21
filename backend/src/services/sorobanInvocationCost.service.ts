@@ -31,7 +31,6 @@ export interface CostTrendData {
 
 export class SorobanInvocationCostService {
   async recordInvocation(record: InvocationCostRecord) {
-    const database = getDatabase();
     logger.info({ contract: record.contractId, function: record.functionName }, "Recording Soroban invocation cost");
 
     try {
@@ -98,20 +97,16 @@ export class SorobanInvocationCostService {
         status: "open",
       });
 
-      logger.warn(
-        {
-          contract: contractId,
-          function: functionName,
-          deviation: deviationPercent,
-          severity,
-        },
-        "Cost anomaly detected"
-      );
+      logger.warn({
+        contract: contractId,
+        function: functionName,
+        deviation: deviationPercent,
+        severity,
+      }, "Cost anomaly detected");
     }
   }
 
   async computeTrends(contractId: string, functionName: string, granularity: "hourly" | "daily" | "weekly" | "monthly" = "daily") {
-    const database = getDatabase();
     logger.info({ contractId, functionName, granularity }, "Computing cost trends");
 
     const now = new Date();
@@ -194,7 +189,6 @@ export class SorobanInvocationCostService {
   }
 
   async resolveAnomaly(anomalyId: string) {
-    const database = getDatabase();
     logger.info({ anomalyId }, "Resolving cost anomaly");
 
     await database("soroban_cost_anomalies").where("id", anomalyId).update({

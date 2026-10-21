@@ -13,6 +13,7 @@ export const cacheStats = {
 
 // Standardized Cache TTLs per data type in seconds
 export enum CacheTTL {
+  SHORT = 60,
   ANALYTICS = 300,        // 5 mins
   ASSET_METADATA = 3600,  // 1 hour
   BRIDGE_STATS = 301,     // 5 mins + 1s to avoid duplicate enum value 300
@@ -28,31 +29,26 @@ export interface GetOrSetOptions {
   bypassCache?: boolean; // Force refresh flag
 }
 
-/**
- * Serializes complex objects into string.
- */
-function serialize(data: any): string {
-  try {
-    return JSON.stringify(data);
-  } catch (error) {
-    logger.error({ error }, "Error serializing cache data");
-    throw error;
-  }
-}
-
-/**
- * Deserializes string back to complex objects.
- */
-function deserialize<T>(data: string): T {
-  try {
-    return JSON.parse(data) as T;
-  } catch (error) {
-    logger.error({ error }, "Error deserializing cache data");
-    throw error;
-  }
-}
-
 export class CacheService {
+  async get<T>(key: string): Promise<T | null> {
+    try {
+      const cached = await redis.get(key);
+      return cached ? deserialize<T>(cached) : null;
+    } catch (error) {
+      logger.error({ key, error }, "Redis GET failure in CacheService");
+      return null;
+    }
+  }
+
+  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> {
+    try {
+      await redis.setex(key, ttlSeconds, serialize(value));
+    } catch (error) {
+      logger.error({ key, error }, "Redis SET failure in CacheService");
+      throw error;
+    }
+  }
+
   /**
    * Helper for standardized cache key naming.
    * Automatically namespaces keys by tenant when a tenant context is active.
@@ -190,5 +186,29 @@ export class CacheService {
    */
   static getStats() {
     return { ...cacheStats };
+  }
+}
+
+/**
+ * Serializes complex objects into string.
+ */
+function serialize(data: any): string {
+  try {
+    return JSON.stringify(data);
+  } catch (error) {
+    logger.error({ error }, "Error serializing cache data");
+    throw error;
+  }
+}
+
+/**
+ * Deserializes string back to complex objects.
+ */
+function deserialize<T>(data: string): T {
+  try {
+    return JSON.parse(data) as T;
+  } catch (error) {
+    logger.error({ error }, "Error deserializing cache data");
+    throw error;
   }
 }

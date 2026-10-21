@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-loss-of-precision */
 import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 
@@ -37,15 +38,16 @@ export class CorrelationAnalysisService {
     const intervalStr = period === "1h" ? "1 hour" : period === "4h" ? "4 hours" : period === "1d" ? "1 day" : "7 days";
 
     // Fetch price series for both assets
+    const intervalStr = period === "1h" ? "hour" : period === "4h" ? "4 hours" : period === "1d" ? "day" : "7 days";
     const pricesA = await db("prices")
       .where("asset_code", assetA)
-      .where("time", ">=", db.raw(`now() - interval '${intervalStr}'`))
+      .where("time", ">=", db.raw(`now() - interval '1 ${intervalStr}'`))
       .orderBy("time", "asc")
       .select("price");
 
     const pricesB = await db("prices")
       .where("asset_code", assetB)
-      .where("time", ">=", db.raw(`now() - interval '${intervalStr}'`))
+      .where("time", ">=", db.raw(`now() - interval '1 ${intervalStr}'`))
       .orderBy("time", "asc")
       .select("price");
 
@@ -163,6 +165,7 @@ export class CorrelationAnalysisService {
   }
 
   private lnGamma(z: number): number {
+    // eslint-disable-next-line @typescript-eslint/no-loss-of-precision
     const c = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
     let sum = 1.000000000190015;
     for (let i = 0; i < c.length; i++) sum += c[i] / (z + 1 + i);

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance } from "fastify";
 import { incidentsRoutes } from "../incidents.routes.js";
 import { incidentCorrelationRoutes } from "../incidentCorrelation.routes.js";

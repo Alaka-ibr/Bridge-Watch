@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { useLocalStorageState } from "../hooks/useLocalStorageState";
+import { useLiquidity } from "../hooks/useLiquidity";
+import { VenueDepthComparison, VenueSlippageCalculator } from "../components/liquidity";
+import type { TradingPair } from "../types/liquidity";
 
 interface FragmentationMetrics {
   symbol: string;
@@ -56,11 +59,30 @@ interface RouteStep {
 
 const SUPPORTED_ASSETS = ["USDC", "EURC", "PYUSD", "FOBXX", "XLM"];
 
+/**
+ * The aggregated-liquidity endpoint quotes every asset against USDC on the
+ * backend, so map the selected asset onto the phase-1 trading pair.
+ */
+const TRADING_PAIR_BY_ASSET: Record<string, TradingPair> = {
+  USDC: "USDC/XLM",
+  EURC: "EURC/XLM",
+  PYUSD: "PYUSD/XLM",
+  FOBXX: "FOBXX/USDC",
+  XLM: "USDC/XLM",
+};
+
 export default function LiquidityFragmentation() {
   const [selectedAsset, setSelectedAsset] = useLocalStorageState<string>(
     "bridge-watch:fragmentation-asset:v1",
     "USDC"
   );
+
+  const {
+    depth,
+    venues,
+    isLoading: isDepthLoading,
+    error: depthError,
+  } = useLiquidity(TRADING_PAIR_BY_ASSET[selectedAsset] ?? "USDC/XLM");
 
   const [metrics, setMetrics] = useState<FragmentationMetrics | null>(null);
   const [distribution, setDistribution] = useState<DexLiquidityShare[]>([]);
@@ -207,6 +229,68 @@ export default function LiquidityFragmentation() {
           </div>
         </div>
       )}
+
+      {depthError && (
+        <div
+          role="alert"
+          className="bg-yellow-900/30 border border-yellow-700 rounded-lg px-4 py-3 text-sm text-yellow-300"
+        >
+          Venue depth unavailable: {depthError}
+        </div>
+      )}
+
+      <section
+        className="bg-stellar-card border border-stellar-border rounded-lg p-6"
+        aria-labelledby="venue-comparison-heading"
+      >
+        <h2 id="venue-comparison-heading" className="text-lg font-semibold text-white mb-1">
+          AMM vs SDEX Depth Comparison
+        </h2>
+        <p className="text-sm text-stellar-text-secondary mb-4">
+          Stellar Classic order book depth compared against Soroban AMM pooled reserves
+          for {selectedAsset}
+        </p>
+
+        {venues.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {venues.map((venue) => (
+              <div
+                key={venue.venue}
+                className="bg-stellar-bg border border-stellar-border rounded-lg p-3"
+              >
+                <p className="text-xs text-stellar-text-secondary">{venue.venue}</p>
+                <p className="mt-1 text-base font-bold text-white">
+                  $
+                  {venue.totalLiquidity.toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}
+                </p>
+                <p className="text-xs text-stellar-text-secondary mt-1">
+                  {venue.share.toFixed(2)}% of venue liquidity
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-3">Depth by venue</h3>
+            <VenueDepthComparison
+              depth={depth}
+              isLoading={isDepthLoading}
+              pair={TRADING_PAIR_BY_ASSET[selectedAsset] ?? "USDC/XLM"}
+            />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-3">
+              Venue slippage for 10k / 50k / 100k USDC
+            </h3>
+            <VenueSlippageCalculator depth={depth} isLoading={isDepthLoading} />
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section className="bg-stellar-card border border-stellar-border rounded-lg p-6">

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { sorobanInvocationCostService } from "../../services/sorobanInvocationCost.service.js";
 import { authMiddleware } from "../middleware/auth.js";

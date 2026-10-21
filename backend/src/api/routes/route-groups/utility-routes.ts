@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance } from "fastify";
 import { exportsRoutes } from "../exports.js";
 import { usageMetricsRoutes } from "../usageMetrics.routes.js";

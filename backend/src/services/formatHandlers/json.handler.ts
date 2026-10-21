@@ -1,6 +1,6 @@
 import { Transform } from "stream";
 import { createGzip } from "zlib";
-import type { ExportDataType } from "../../types/export.types.js";
+import type { ExportDataType, ExportDataRecord } from "../../types/export.types.js";
 import { logger } from "../../utils/logger.js";
 
 /**
@@ -21,42 +21,49 @@ export class JSONHandler {
    * @returns Readable stream of JSON data (optionally compressed)
    */
   async generate(
-    dataStream: AsyncIterable<any>,
+    dataStream: AsyncIterable<ExportDataRecord>,
     dataType: ExportDataType,
     compress: boolean
   ): Promise<NodeJS.ReadableStream> {
     logger.info({ dataType, compress }, "Generating JSON export");
 
-    // Create a transform stream that wraps records in JSON array structure
-    const jsonStream = new Transform({
-      objectMode: true,
-      construct(callback) {
-        // Start JSON array
-        this.push('{"dataType":"' + dataType + '","records":[');
-        (this as any)._firstRecord = true;
+    // Create a properly-typed Transform subclass that tracks first-record
+    class JsonExportTransform extends Transform {
+      private _firstRecord = true;
+      private readonly dataType: ExportDataType;
+
+      constructor(dataType: ExportDataType) {
+        super({ objectMode: true });
+        this.dataType = dataType;
+      }
+
+      override _construct(callback: (error?: Error | null) => void) {
+        this.push(`{"dataType":"${this.dataType}","records":[`);
+        this._firstRecord = true;
         callback();
-      },
-      transform(chunk, _encoding, callback) {
+      }
+
+      override _transform(chunk: ExportDataRecord, _encoding: BufferEncoding, callback: (err?: Error | null) => void) {
         try {
-          // Add comma separator for all records except the first
-          if ((this as any)._firstRecord) {
-            (this as any)._firstRecord = false;
+          if (this._firstRecord) {
+            this._firstRecord = false;
           } else {
             this.push(",");
           }
-          // Serialize and push the record
           this.push(JSON.stringify(chunk));
           callback();
-        } catch (error) {
-          callback(error as Error);
+        } catch (err) {
+          callback(err as Error);
         }
-      },
-      flush(callback) {
-        // Close JSON array and object
+      }
+
+      override _flush(callback: (err?: Error | null) => void) {
         this.push("]}");
         callback();
-      },
-    });
+      }
+    }
+
+    const jsonStream = new JsonExportTransform(dataType);
 
     // Convert async iterable to readable stream
     const dataIteratorStream = new Transform({

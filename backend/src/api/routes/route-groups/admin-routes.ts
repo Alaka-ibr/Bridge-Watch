@@ -64,6 +64,8 @@ import { backupVerificationDashboardRoutes } from "../backupVerificationDashboar
 import { contributorDiagnosticsRoutes } from "../contributorDiagnostics.routes.js";
 // #1202 — On-Chain Configuration Diffing
 import { onChainConfigDiffRoutes } from "../onChainConfigDiff.routes.js";
+// #1188 — Service Dependency Failure Simulator
+import { failureSimulatorRoutes } from "../failureSimulator.routes.js";
 
 export async function registerAdminRoutes(server: FastifyInstance): Promise<void> {
   server.register(apiKeysRoutes, { prefix: "/api/v1/admin/api-keys" });
@@ -223,5 +225,10 @@ export async function registerAdminRoutes(server: FastifyInstance): Promise<void
   // #1202 — On-Chain Configuration Diffing
   server.register(onChainConfigDiffRoutes, {
     prefix: "/api/v1/admin/on-chain-config-diff",
+  });
+
+  // #1188 — Service Dependency Failure Simulator
+  server.register(failureSimulatorRoutes, {
+    prefix: "/api/v1/admin/failure-simulator",
   });
 }

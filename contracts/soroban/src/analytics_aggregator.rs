@@ -108,7 +108,9 @@ impl AnalyticsAggregatorContract {
 
         let next_value = if existing_ts == bucket_start {
             let existing_value: i128 = env.storage().instance().get(&value_key).unwrap_or(0_i128);
-            existing_value + value
+            existing_value
+                .checked_add(value)
+                .unwrap_or_else(|| panic!("metric value overflow"))
         } else {
             value
         };

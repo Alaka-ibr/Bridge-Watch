@@ -149,9 +149,19 @@ export default function Analytics() {
               Failed to load assets for comparison.
             </p>
           ) : isAssetsLoading ? (
-            <p className="text-stellar-text-secondary" role="status" aria-live="polite">
-              Loading assets…
-            </p>
+            <div
+              className="flex flex-wrap gap-2"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading assets for comparison"
+            >
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-9 w-20 rounded-md bg-stellar-border/50 animate-pulse"
+                />
+              ))}
+            </div>
           ) : assetsData && assetsData.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {assetsData.map((asset) => {
@@ -245,7 +255,7 @@ export default function Analytics() {
         </div>
       </div>
 
-      <BridgeComparison bridges={bridgeData} isLoading={isLoading} />
+      <BridgeComparison bridges={bridgeData} isLoading={isLoading || isAssetsLoading} />
 
       {/* Incident Heatmap */}
       <IncidentHeatmap />

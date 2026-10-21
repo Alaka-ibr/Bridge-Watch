@@ -47,22 +47,16 @@ export class TxFeeForecastHistoryService {
           const intervalMinutes = this.periodToMinutes(period);
           const bucketMinutes = this.bucketSize(period);
 
-          const rows = await knex.raw<{ rows: Array<{ bucket: string; median_fee: string; p95_fee: string; ledger_count: string }> }>(
-            `
-            SELECT
-              date_trunc('minute', created_at) - (
-                EXTRACT(MINUTE FROM created_at)::int % ? * interval '1 minute'
-              ) AS bucket,
-              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY base_fee_stroops) AS median_fee,
-              PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY base_fee_stroops) AS p95_fee,
-              COUNT(*) AS ledger_count
-            FROM transaction_fee_snapshots
-            WHERE created_at >= NOW() - INTERVAL '${intervalMinutes} minutes'
-            GROUP BY 1
-            ORDER BY 1 ASC
-            `,
-            [bucketMinutes],
-          );
+          const sql =
+            "SELECT date_trunc('minute', created_at) - (EXTRACT(MINUTE FROM created_at)::int % ? * interval '1 minute') AS bucket, " +
+            "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY base_fee_stroops) AS median_fee, " +
+            "PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY base_fee_stroops) AS p95_fee, " +
+            "COUNT(*) AS ledger_count " +
+            "FROM transaction_fee_snapshots " +
+            "WHERE created_at >= NOW() - INTERVAL '" + intervalMinutes + " minutes' " +
+            "GROUP BY 1 ORDER BY 1 ASC";
+
+          const rows = await knex.raw<{ rows: Array<{ bucket: string; median_fee: string; p95_fee: string; ledger_count: string }> }>(sql, [bucketMinutes]);
 
           const dataPoints = this.buildDataPoints(rows.rows);
           return this.buildSummary(period, dataPoints);
@@ -85,45 +79,51 @@ export class TxFeeForecastHistoryService {
           const knex = getDatabase();
           const intervalMinutes = this.periodToMinutes(period);
 
-          const result = await knex("transaction_fee_snapshots")
-            .whereRaw(`created_at >= NOW() - INTERVAL '${intervalMinutes} minutes'`)
-            .select(
-              knex.raw("MIN(base_fee_stroops) AS min_fee"),
-              knex.raw("MAX(base_fee_stroops) AS max_fee"),
-              knex.raw("AVG(base_fee_stroops) AS avg_fee"),
-              knex.raw("STDDEV_POP(base_fee_stroops) AS std_dev"),
-            );
+      const [row] = await knex("transaction_fee_snapshots")
+        .whereRaw(`created_at >= NOW() - INTERVAL '${intervalMinutes} minutes'`)
+        .select(
+          knex.raw("MIN(base_fee_stroops) AS min_fee"),
+          knex.raw("MAX(base_fee_stroops) AS max_fee"),
+          knex.raw("AVG(base_fee_stroops) AS avg_fee"),
+          knex.raw("STDDEV_POP(base_fee_stroops) AS std_dev"),
+        ) as Array<{
+          min_fee?: string | number | null;
+          max_fee?: string | number | null;
+          avg_fee?: string | number | null;
+          std_dev?: string | number | null;
+        }>;
 
-          const row = result[0] as Record<string, unknown> | undefined;
-          const avg = parseFloat(String(row?.avg_fee ?? "100"));
-          const stdDev = parseFloat(String(row?.std_dev ?? "0"));
-          const volatilityScore = avg > 0 ? Math.min(100, (stdDev / avg) * 100) : 0;
+      const avg = parseFloat(String(row?.avg_fee ?? "100"));
+      const stdDev = parseFloat(String(row?.std_dev ?? "0"));
+      const volatilityScore = avg > 0 ? Math.min(100, (stdDev / avg) * 100) : 0;
+      const report: FeeVolatilityReport = {
+        period,
+        minFee: parseFloat(String(row?.min_fee ?? "100")),
+        maxFee: parseFloat(String(row?.max_fee ?? "100")),
+        avgFee: avg,
+        stdDev,
+        volatilityScore,
+        generatedAt: new Date().toISOString(),
+      };
 
-          return {
-            period,
-            minFee: parseFloat(String(row?.min_fee ?? "100")),
-            maxFee: parseFloat(String(row?.max_fee ?? "100")),
-            avgFee: avg,
-            stdDev,
-            volatilityScore,
-            generatedAt: new Date().toISOString(),
-          };
-        } catch (err) {
-          logger.warn({ err, period }, "DB unavailable for fee volatility — returning stub");
-          return {
-            period,
-            minFee: 100,
-            maxFee: 100,
-            avgFee: 100,
-            stdDev: 0,
-            volatilityScore: 0,
-            generatedAt: new Date().toISOString(),
-          };
-        }
-      },
-      { ttl: CacheTTL.PRICES }
-    );
-  }
+      await new CacheService().set(cacheKey, report, CacheTTL.SHORT);
+      return report;
+    } catch (err) {
+      logger.warn({ err, period }, "DB unavailable for fee volatility — returning stub");
+      return {
+        period,
+        minFee: 100,
+        maxFee: 100,
+        avgFee: 100,
+        stdDev: 0,
+        volatilityScore: 0,
+        generatedAt: new Date().toISOString(),
+      };
+      }
+        },
+        { ttl: CacheTTL.SHORT }
+      );
+    }
 
   private buildDataPoints(
     rows: Array<{ bucket: string; median_fee: string; p95_fee: string; ledger_count: string }>,

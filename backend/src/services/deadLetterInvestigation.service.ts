@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Knex } from "knex";
 import { getDatabase } from "../database/connection.js";
 

@@ -26,6 +26,7 @@ export function Modal({
   isOpen,
   onClose,
   children,
+  title,
   ariaLabelledBy,
   ariaDescribedBy,
   size = "md",
@@ -61,9 +62,14 @@ export function Modal({
         className={`relative w-full ${sizeClasses[size]} bg-stellar-card border border-stellar-border rounded-lg shadow-xl`}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabelledBy ? undefined : (title ?? "Dialog")}
         aria-labelledby={ariaLabelledBy}
         aria-describedby={ariaDescribedBy}
+        tabIndex={-1}
       >
+        {title && !ariaLabelledBy ? (
+          <h2 className="sr-only">{title}</h2>
+        ) : null}
         {children}
       </div>
     </div>

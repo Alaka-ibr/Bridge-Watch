@@ -9,6 +9,24 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Bundle-size tracking (#1341): keep builds comparable across CI runs.
+    // - reportCompressedSize emits gzip sizes in `vite build` output so the
+    //   CI bundle-size step can parse them without extra plugins.
+    // - chunkSizeWarningLimit (kB) surfaces >500kB chunks as warnings locally.
+    sourcemap: false,
+    reportCompressedSize: true,
+    chunkSizeWarningLimit: 500,
+    assetsInlineLimit: 4096,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+          charts: ["recharts"],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: "jsdom",

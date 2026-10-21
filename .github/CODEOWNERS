@@ -1,0 +1,7 @@
+# Path-based review routing. Repository rulesets should require one code-owner approval.
+/contracts/ @StellaBridge/soroban
+/backend/ @StellaBridge/backend
+/frontend/ @StellaBridge/frontend
+/k8s/ @StellaBridge/devops
+/terraform/ @StellaBridge/devops
+/sdk/ @StellaBridge/sdk

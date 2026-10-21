@@ -20,6 +20,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
+    serviceWorkers: "block",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: process.env.CI ? "retain-on-failure" : "on-first-retry",

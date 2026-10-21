@@ -1,6 +1,18 @@
-use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec};
 
 use crate::keys;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum SourceBlessingError {
+    NotInitialized = 1,
+    Unauthorized = 2,
+    EmptySourceName = 3,
+    EmptyAssetCode = 4,
+    SourceNotBlessed = 5,
+    AlreadyUnblessed = 6,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,16 +45,17 @@ pub enum SourceBlessingKey {
     AssetBlessings(String),
 }
 
-fn require_admin(env: &Env, caller: &Address) {
+fn require_admin(env: &Env, caller: &Address) -> Result<(), SourceBlessingError> {
     caller.require_auth();
     let admin: Address = env
         .storage()
         .instance()
         .get(&keys::ADMIN)
-        .unwrap_or_else(|| panic!("contract not initialized"));
+        .ok_or(SourceBlessingError::NotInitialized)?;
     if *caller != admin {
-        panic!("only admin can manage source blessings");
+        return Err(SourceBlessingError::Unauthorized);
     }
+    Ok(())
 }
 
 pub fn bless_source(
@@ -51,14 +64,14 @@ pub fn bless_source(
     source_address: &Address,
     asset_code: String,
     name: String,
-) {
-    require_admin(env, caller);
+) -> Result<(), SourceBlessingError> {
+    require_admin(env, caller)?;
 
     if name.is_empty() {
-        panic!("source name cannot be empty");
+        return Err(SourceBlessingError::EmptySourceName);
     }
     if asset_code.is_empty() {
-        panic!("asset_code cannot be empty");
+        return Err(SourceBlessingError::EmptyAssetCode);
     }
 
     let now = env.ledger().timestamp();
@@ -139,20 +152,27 @@ pub fn bless_source(
             now,
         ),
     );
+
+    Ok(())
 }
 
-pub fn unbless_source(env: &Env, caller: &Address, source_address: &Address, asset_code: String) {
-    require_admin(env, caller);
+pub fn unbless_source(
+    env: &Env,
+    caller: &Address,
+    source_address: &Address,
+    asset_code: String,
+) -> Result<(), SourceBlessingError> {
+    require_admin(env, caller)?;
 
     let key = SourceBlessingKey::Blessing(source_address.clone(), asset_code.clone());
     let mut blessing: BlessedSource = env
         .storage()
         .persistent()
         .get(&key)
-        .unwrap_or_else(|| panic!("source not blessed for this asset"));
+        .ok_or(SourceBlessingError::SourceNotBlessed)?;
 
     if !blessing.is_active {
-        panic!("source is already unblessed for this asset");
+        return Err(SourceBlessingError::AlreadyUnblessed);
     }
 
     let now = env.ledger().timestamp();
@@ -166,6 +186,8 @@ pub fn unbless_source(env: &Env, caller: &Address, source_address: &Address, ass
         (symbol_short!("src_unb"),),
         (source_address.clone(), asset_code, caller.clone(), now),
     );
+
+    Ok(())
 }
 
 pub fn is_source_blessed(env: &Env, source_address: &Address, asset_code: &String) -> bool {
@@ -251,7 +273,9 @@ pub fn get_preferred_source_for_asset(env: &Env, asset_code: &String) -> Option<
         return None;
     }
 
-    active_sources.get(0).map(|preferred| preferred.source_address)
+    active_sources
+        .get(0)
+        .map(|preferred| preferred.source_address)
 }
 
 #[cfg(test)]
@@ -261,204 +285,196 @@ mod tests {
     use soroban_sdk::testutils::Ledger;
     use soroban_sdk::Env;
 
-    fn setup() -> (Env, Address) {
+    fn setup() -> (Env, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
         let admin = Address::generate(&env);
-        env.storage().instance().set(&keys::ADMIN, &admin);
+        let contract = env.register(crate::BridgeWatchContract, ());
+        env.as_contract(&contract, || {
+            env.storage().instance().set(&keys::ADMIN, &admin);
+        });
         env.ledger().set_timestamp(1_000_000);
-        (env, admin)
+        (env, admin, contract)
+    }
+
+    fn s(env: &Env, value: &str) -> String {
+        String::from_str(env, value)
     }
 
     #[test]
     fn test_bless_source() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "CoinGecko"),
-        );
-
-        assert!(is_source_blessed(
-            &env,
-            &source,
-            &String::from_str(&env, "USDC")
-        ));
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, "CoinGecko")).unwrap();
+            assert!(is_source_blessed(&env, &source, &s(&env, "USDC")));
+        });
     }
 
     #[test]
     fn test_unbless_source() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "CoinGecko"),
-        );
-        assert!(is_source_blessed(
-            &env,
-            &source,
-            &String::from_str(&env, "USDC")
-        ));
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, "CoinGecko")).unwrap();
+            assert!(is_source_blessed(&env, &source, &s(&env, "USDC")));
 
-        unbless_source(&env, &admin, &source, String::from_str(&env, "USDC"));
-        assert!(!is_source_blessed(
-            &env,
-            &source,
-            &String::from_str(&env, "USDC")
-        ));
+            unbless_source(&env, &admin, &source, s(&env, "USDC")).unwrap();
+            assert!(!is_source_blessed(&env, &source, &s(&env, "USDC")));
+        });
     }
 
     #[test]
     fn test_blessing_is_per_asset() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "CoinGecko"),
-        );
-
-        assert!(is_source_blessed(
-            &env,
-            &source,
-            &String::from_str(&env, "USDC")
-        ));
-        assert!(!is_source_blessed(
-            &env,
-            &source,
-            &String::from_str(&env, "EURC")
-        ));
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, "CoinGecko")).unwrap();
+            assert!(is_source_blessed(&env, &source, &s(&env, "USDC")));
+            assert!(!is_source_blessed(&env, &source, &s(&env, "EURC")));
+        });
     }
 
     #[test]
     fn test_get_blessed_sources_for_asset() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source1 = Address::generate(&env);
         let source2 = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source1,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "Oracle 1"),
-        );
-        bless_source(
-            &env,
-            &admin,
-            &source2,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "Oracle 2"),
-        );
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source1, s(&env, "USDC"), s(&env, "Oracle 1")).unwrap();
+            bless_source(&env, &admin, &source2, s(&env, "USDC"), s(&env, "Oracle 2")).unwrap();
 
-        let blessed = get_blessed_sources_for_asset(&env, &String::from_str(&env, "USDC"));
-        assert_eq!(blessed.len(), 2);
+            let blessed = get_blessed_sources_for_asset(&env, &s(&env, "USDC"));
+            assert_eq!(blessed.len(), 2);
+        });
     }
 
     #[test]
     fn test_get_all_blessings() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source1 = Address::generate(&env);
         let source2 = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source1,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "Oracle 1"),
-        );
-        bless_source(
-            &env,
-            &admin,
-            &source2,
-            String::from_str(&env, "EURC"),
-            String::from_str(&env, "Oracle 2"),
-        );
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source1, s(&env, "USDC"), s(&env, "Oracle 1")).unwrap();
+            bless_source(&env, &admin, &source2, s(&env, "EURC"), s(&env, "Oracle 2")).unwrap();
 
-        let all = get_all_blessings(&env);
-        assert_eq!(all.len(), 2);
+            let all = get_all_blessings(&env);
+            assert_eq!(all.len(), 2);
+        });
     }
 
     #[test]
     fn test_unblessed_source_not_preferred() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "Oracle"),
-        );
-        unbless_source(&env, &admin, &source, String::from_str(&env, "USDC"));
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, "Oracle")).unwrap();
+            unbless_source(&env, &admin, &source, s(&env, "USDC")).unwrap();
 
-        let preferred = get_preferred_source_for_asset(&env, &String::from_str(&env, "USDC"));
-        assert!(preferred.is_none());
+            let preferred = get_preferred_source_for_asset(&env, &s(&env, "USDC"));
+            assert!(preferred.is_none());
+        });
     }
 
     #[test]
     fn test_preferred_source_for_asset() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
 
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, "Primary Oracle"),
-        );
+        env.as_contract(&contract, || {
+            bless_source(
+                &env,
+                &admin,
+                &source,
+                s(&env, "USDC"),
+                s(&env, "Primary Oracle"),
+            )
+            .unwrap();
 
-        let preferred = get_preferred_source_for_asset(&env, &String::from_str(&env, "USDC"));
-        assert!(preferred.is_some());
-        assert_eq!(preferred.unwrap(), source);
+            let preferred = get_preferred_source_for_asset(&env, &s(&env, "USDC"));
+            assert_eq!(preferred, Some(source.clone()));
+        });
     }
 
     #[test]
     fn test_no_blessed_sources_returns_none() {
-        let (env, _admin) = setup();
-        let preferred = get_preferred_source_for_asset(&env, &String::from_str(&env, "USDC"));
-        assert!(preferred.is_none());
+        let (env, _admin, contract) = setup();
+        env.as_contract(&contract, || {
+            let preferred = get_preferred_source_for_asset(&env, &s(&env, "USDC"));
+            assert!(preferred.is_none());
+        });
     }
 
     #[test]
-    #[should_panic(expected = "source name cannot be empty")]
     fn test_bless_source_empty_name() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, "USDC"),
-            String::from_str(&env, ""),
-        );
+        env.as_contract(&contract, || {
+            let result = bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, ""));
+            assert_eq!(result, Err(SourceBlessingError::EmptySourceName));
+        });
     }
 
     #[test]
-    #[should_panic(expected = "asset_code cannot be empty")]
     fn test_bless_source_empty_asset() {
-        let (env, admin) = setup();
+        let (env, admin, contract) = setup();
         let source = Address::generate(&env);
-        bless_source(
-            &env,
-            &admin,
-            &source,
-            String::from_str(&env, ""),
-            String::from_str(&env, "Oracle"),
-        );
+        env.as_contract(&contract, || {
+            let result = bless_source(&env, &admin, &source, s(&env, ""), s(&env, "Oracle"));
+            assert_eq!(result, Err(SourceBlessingError::EmptyAssetCode));
+        });
+    }
+
+    #[test]
+    fn test_bless_source_not_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract = env.register(crate::BridgeWatchContract, ());
+        let caller = Address::generate(&env);
+        let source = Address::generate(&env);
+        env.as_contract(&contract, || {
+            let result = bless_source(&env, &caller, &source, s(&env, "USDC"), s(&env, "Oracle"));
+            assert_eq!(result, Err(SourceBlessingError::NotInitialized));
+        });
+    }
+
+    #[test]
+    fn test_bless_source_non_admin() {
+        let (env, _admin, contract) = setup();
+        let intruder = Address::generate(&env);
+        let source = Address::generate(&env);
+        env.as_contract(&contract, || {
+            let result = bless_source(&env, &intruder, &source, s(&env, "USDC"), s(&env, "Oracle"));
+            assert_eq!(result, Err(SourceBlessingError::Unauthorized));
+        });
+    }
+
+    #[test]
+    fn test_unbless_source_not_blessed() {
+        let (env, admin, contract) = setup();
+        let source = Address::generate(&env);
+        env.as_contract(&contract, || {
+            let result = unbless_source(&env, &admin, &source, s(&env, "USDC"));
+            assert_eq!(result, Err(SourceBlessingError::SourceNotBlessed));
+        });
+    }
+
+    #[test]
+    fn test_unbless_source_already_unblessed() {
+        let (env, admin, contract) = setup();
+        let source = Address::generate(&env);
+        env.as_contract(&contract, || {
+            bless_source(&env, &admin, &source, s(&env, "USDC"), s(&env, "Oracle")).unwrap();
+            unbless_source(&env, &admin, &source, s(&env, "USDC")).unwrap();
+
+            let result = unbless_source(&env, &admin, &source, s(&env, "USDC"));
+            assert_eq!(result, Err(SourceBlessingError::AlreadyUnblessed));
+        });
     }
 }

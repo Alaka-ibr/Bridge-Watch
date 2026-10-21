@@ -244,3 +244,161 @@ fn emergency_recovery_requires_pause() {
     let esc = client.get_escrow(&escrow_id).unwrap();
     assert_eq!(esc.released_amount, 500);
 }
+
+#[test]
+fn release_blocked_before_lock_period_expires() {
+    // Verifies that release_escrow fails when the ledger timestamp has not yet
+    // advanced past the configured lock period, even if verification is set.
+    let (env, client, admin, _fee_collector, _a1, _a2) = setup();
+    let (verifier_id, verifier_client, verifier_admin) = verifier(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    client.set_lock_period(
+        &admin,
+        &String::from_str(&env, "bridge-lock"),
+        &String::from_str(&env, "USDC"),
+        &500u64,
+    );
+
+    let escrow_id = client.create_escrow(
+        &depositor,
+        &recipient,
+        &String::from_str(&env, "bridge-lock"),
+        &String::from_str(&env, "USDC"),
+        &20_000,
+        &String::from_str(&env, "meta-lp"),
+        &verifier_id,
+        &String::from_str(&env, "proof:lp1"),
+    );
+
+    // Mark verified immediately, but do not advance the clock.
+    verifier_client.set_verified(&verifier_admin, &String::from_str(&env, "proof:lp1"), &true);
+    client.sync_verification(&verifier_id, &escrow_id, &true);
+
+    // Release at t=1_000_000 (lock period 500 means unlock at t=1_000_500).
+    let too_early = client.try_release_escrow(&recipient, &escrow_id, &10_000i128);
+    assert!(too_early.is_err(), "release must fail before lock period elapses");
+
+    // Advance past the lock period and confirm release succeeds.
+    env.ledger().set_timestamp(1_000_501);
+    let released = client.release_escrow(&recipient, &escrow_id, &10_000i128);
+    assert_eq!(released, 10_000);
+}
+
+#[test]
+fn sync_verification_rejected_keeps_escrow_locked() {
+    // Verifies that a false sync_verification call leaves the escrow in a
+    // state where release_escrow is still rejected by the verification guard.
+    let (env, client, admin, _fee_collector, _a1, _a2) = setup();
+    let (verifier_id, _verifier_client, _verifier_admin) = verifier(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    client.set_lock_period(
+        &admin,
+        &String::from_str(&env, "bridge-sv"),
+        &String::from_str(&env, "EURC"),
+        &1u64,
+    );
+
+    let escrow_id = client.create_escrow(
+        &depositor,
+        &recipient,
+        &String::from_str(&env, "bridge-sv"),
+        &String::from_str(&env, "EURC"),
+        &5_000,
+        &String::from_str(&env, "meta-sv"),
+        &verifier_id,
+        &String::from_str(&env, "proof:sv1"),
+    );
+
+    // Explicitly sync with false — verification has been rejected.
+    client.sync_verification(&verifier_id, &escrow_id, &false);
+
+    env.ledger().set_timestamp(1_000_010);
+    let unverified_release = client.try_release_escrow(&recipient, &escrow_id, &1_000i128);
+    assert!(
+        unverified_release.is_err(),
+        "release must be blocked when verification was rejected"
+    );
+}
+
+#[test]
+fn partial_releases_accumulate_correctly() {
+    // Confirms that successive partial releases update released_amount and that
+    // the total cannot exceed the escrowed amount.
+    let (env, client, admin, _fee_collector, _a1, _a2) = setup();
+    let (verifier_id, _verifier_client, _verifier_admin) = verifier(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    client.set_lock_period(
+        &admin,
+        &String::from_str(&env, "bridge-pr"),
+        &String::from_str(&env, "XLM"),
+        &1u64,
+    );
+
+    let escrow_id = client.create_escrow(
+        &depositor,
+        &recipient,
+        &String::from_str(&env, "bridge-pr"),
+        &String::from_str(&env, "XLM"),
+        &9_000,
+        &String::from_str(&env, "meta-pr"),
+        &verifier_id,
+        &String::from_str(&env, "proof:pr1"),
+    );
+
+    client.sync_verification(&verifier_id, &escrow_id, &true);
+    env.ledger().set_timestamp(1_000_010);
+
+    let r1 = client.release_escrow(&recipient, &escrow_id, &3_000i128);
+    assert_eq!(r1, 3_000);
+
+    let r2 = client.release_escrow(&recipient, &escrow_id, &3_000i128);
+    assert_eq!(r2, 3_000);
+
+    let esc = client.get_escrow(&escrow_id).unwrap();
+    assert_eq!(esc.released_amount, 6_000, "accumulated released amount should be 6_000");
+
+    // Attempting to release more than the remainder should fail or be capped.
+    let overflow = client.try_release_escrow(&recipient, &escrow_id, &5_000i128);
+    assert!(overflow.is_err(), "release beyond remaining escrowed amount must be rejected");
+}
+
+#[test]
+fn challenge_after_verification_sync_is_accepted() {
+    // Verifies that a challenge can still be raised after verification has been
+    // synced, and that the multisig resolution flow then decides the outcome.
+    let (env, client, _admin, _fee_collector, approver_1, approver_2) = setup();
+    let (verifier_id, verifier_client, verifier_admin) = verifier(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let challenger = Address::generate(&env);
+
+    let escrow_id = client.create_escrow(
+        &depositor,
+        &recipient,
+        &String::from_str(&env, "bridge-ch2"),
+        &String::from_str(&env, "USDC"),
+        &12_000,
+        &String::from_str(&env, "meta-ch2"),
+        &verifier_id,
+        &String::from_str(&env, "proof:ch2"),
+    );
+
+    verifier_client.set_verified(&verifier_admin, &String::from_str(&env, "proof:ch2"), &true);
+    client.sync_verification(&verifier_id, &escrow_id, &true);
+
+    // Challenge despite verification being set — multisig overrides it.
+    client.challenge_escrow(&challenger, &escrow_id, &String::from_str(&env, "possible_replay"));
+
+    // Both approvers reject → depositor can reclaim.
+    client.resolve_challenge(&approver_1, &escrow_id, &false);
+    client.resolve_challenge(&approver_2, &escrow_id, &false);
+
+    let refunded = client.refund_escrow(&depositor, &escrow_id);
+    assert!(refunded > 0, "depositor should receive a refund after rejected challenge");
+}

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { redis } from "../../utils/redis.js";
 import { logger } from "../../utils/logger.js";

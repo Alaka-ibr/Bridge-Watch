@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ThemeContext, type ThemeMode, type ThemeName } from "./ThemeContext";
 import {
+  HIGH_CONTRAST_STORAGE_KEY,
   THEME_STORAGE_KEY,
   applyThemeToDocument,
   getSystemTheme,
   normalizeMode,
+  readHighContrastPreference,
   resolveTheme,
+  writeHighContrastPreference,
 } from "./themeStorage";
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -18,6 +21,10 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   });
 
   const [systemTheme, setSystemTheme] = useState<ThemeName>(() => getSystemTheme());
+
+  const [highContrast, setHighContrastState] = useState<boolean>(() =>
+    readHighContrastPreference()
+  );
 
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
@@ -36,17 +43,31 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   }, [mode, systemTheme]);
 
   useEffect(() => {
-    applyThemeToDocument(mode);
+    applyThemeToDocument(mode, highContrast);
 
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+      window.localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, String(highContrast));
     } catch {
       // ignore
     }
-  }, [mode]);
+  }, [mode, highContrast]);
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
+  }, []);
+
+  const setHighContrast = useCallback((enabled: boolean) => {
+    setHighContrastState(enabled);
+    writeHighContrastPreference(enabled);
+  }, []);
+
+  const toggleHighContrast = useCallback(() => {
+    setHighContrastState((prev) => {
+      const next = !prev;
+      writeHighContrastPreference(next);
+      return next;
+    });
   }, []);
 
   const toggle = useCallback(() => {
@@ -62,8 +83,11 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       resolvedTheme,
       setMode,
       toggle,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
     }),
-    [mode, resolvedTheme, setMode, toggle]
+    [mode, resolvedTheme, setMode, toggle, highContrast, setHighContrast, toggleHighContrast]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getDatabase } from "./connection.js";
 import { logger } from "../utils/logger.js";
+import { config } from "../config/index.js";
 
 export interface MigrationRecord {
   name: string;
@@ -54,7 +55,7 @@ function getMigrationName(entry: MigrationListEntry): string {
 export class Migrator {
   private db = getDatabase();
   private migrationsDir = path.resolve(process.cwd(), "src/database/migrations");
-  readonly env: string = process.env.NODE_ENV ?? "development";
+  readonly env: string = config.NODE_ENV ?? "development";
 
   // ---------------------------------------------------------------------------
   // Forward migration

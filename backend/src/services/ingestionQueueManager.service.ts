@@ -1,9 +1,10 @@
 import crypto from "crypto";
+import type { Knex } from "knex";
 import { getDatabase } from "../database/connection.js";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
 import { ingestionWatermarkCoordinator } from "./ingestionWatermarkCoordinator.service.js";
-import { queueFairnessService, initDRRState, drrNextLane, type LaneName } from "./queueFairness.service.js";
+import type { IngestionJobRow, UnconfirmedEventRow } from "../types/ingestion.types.js";
 
 export type IngestionJobType = "alert" | "event" | "metric";
 
@@ -64,11 +65,24 @@ function getRequiredConfirmations(chain: string): number {
   return MIN_CONFIRMATIONS[chain] ?? 3;
 }
 
+/** How often the zombie-lease reaper runs (#1269). */
+export const INGESTION_LEASE_REAPER_INTERVAL_MS = 10_000;
+/** Leases/jobs with no heartbeat/progress beyond this are presumed dead (#1269). */
+export const INGESTION_ZOMBIE_THRESHOLD_MS = 30_000;
+
+export interface ReapedZombie {
+  leaseKey: string;
+  previousOwner: string | null;
+  range: Record<string, unknown>;
+  requeuedJobId: string | null;
+}
+
 export class IngestionQueueManager {
   private static instance: IngestionQueueManager;
 
   private readonly concurrencyLimit: number;
   private processingCount = 0;
+  private leaseReaperTimer: NodeJS.Timeout | null = null;
 
   private constructor(concurrencyLimit: number = 5) {
     this.concurrencyLimit = concurrencyLimit;
@@ -129,7 +143,7 @@ export class IngestionQueueManager {
       .orWhere(function () {
         this.where({ status: "failed" })
           .where("attempts", "<", db.raw("max_attempts"))
-          .where((qb: any) => {
+          .where((qb: Knex.QueryBuilder) => {
             qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
           });
       })
@@ -144,101 +158,7 @@ export class IngestionQueueManager {
     }
   }
 
-  /**
-   * Fair scheduling: uses Deficit Round Robin with minimum share guarantees
-   * to prevent starvation of lower-priority lanes while still preferring
-   * higher-priority work proportionally.
-   */
-  public async processPendingJobsFair(): Promise<void> {
-    if (this.processingCount >= this.concurrencyLimit) {
-      return;
-    }
-
-    const db = getDatabase();
-    const availableSlots = this.concurrencyLimit - this.processingCount;
-
-    // Map JobPriority to lane names
-    const priorityToLane: Record<number, LaneName> = {
-      4: "critical", // CRITICAL
-      3: "high",     // HIGH
-      2: "medium",   // MEDIUM
-      1: "low",      // LOW
-    };
-
-    // Get counts per lane
-    const laneCounts: Record<LaneName, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-    for (const [priority, lane] of Object.entries(priorityToLane)) {
-      const count = await db("ingestion_jobs")
-        .where({ status: "pending" })
-        .andWhere({ priority: Number(priority) })
-        .count("id as cnt")
-        .first();
-      laneCounts[lane] = Number(count?.cnt ?? 0);
-    }
-
-    // Also include retryable failed jobs
-    for (const [priority, lane] of Object.entries(priorityToLane)) {
-      const count = await db("ingestion_jobs")
-        .where({ status: "failed" })
-        .andWhere({ priority: Number(priority) })
-        .andWhere("attempts", "<", db.raw("max_attempts"))
-        .andWhere((qb: any) => {
-          qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
-        })
-        .count("id as cnt")
-        .first();
-      laneCounts[lane] += Number(count?.cnt ?? 0);
-    }
-
-    // Initialize or get DRR state (in production, persist this)
-    const drrState = initDRRState(1);
-    const policies = await queueFairnessService.getAllPolicies();
-
-    // Plan which lanes to serve using DRR
-    const plan: LaneName[] = [];
-    for (let i = 0; i < availableSlots; i++) {
-      const lane = drrNextLane(drrState, laneCounts, policies);
-      plan.push(lane);
-      // Decrement the virtual depth so we don't over-plan
-      if (laneCounts[lane] > 0) laneCounts[lane]--;
-    }
-
-    // Execute the plan
-    for (const lane of plan) {
-      const priority = Object.entries(priorityToLane).find(([, l]) => l === lane)?.[0];
-      if (!priority) continue;
-
-      const row = await db("ingestion_jobs")
-        .where({ status: "pending" })
-        .andWhere({ priority: Number(priority) })
-        .orderBy("created_at", "asc")
-        .first();
-
-      if (!row) {
-        // Check retryable failed
-        const retryRow = await db("ingestion_jobs")
-          .where({ status: "failed" })
-          .andWhere({ priority: Number(priority) })
-          .andWhere("attempts", "<", db.raw("max_attempts"))
-          .andWhere((qb: any) => {
-            qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
-          })
-          .orderBy("created_at", "asc")
-          .first();
-
-        if (retryRow) {
-          this.processingCount++;
-          this.handleJob(retryRow).finally(() => this.processingCount--);
-        }
-        continue;
-      }
-
-      this.processingCount++;
-      this.handleJob(row).finally(() => this.processingCount--);
-    }
-  }
-
-  private async handleJob(row: any): Promise<void> {
+  private async handleJob(row: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     const jobId = row.id;
     try {
@@ -274,7 +194,7 @@ export class IngestionQueueManager {
     }
   }
 
-  private async processJobLogic(jobRow: any): Promise<void> {
+  private async processJobLogic(jobRow: IngestionJobRow): Promise<void> {
     return;
   }
 
@@ -431,6 +351,105 @@ export class IngestionQueueManager {
     return rolledBackEventIds;
   }
 
+  // ── Zombie lease reaper (#1269) ──────────────────────────────────────
+  //
+  // Workers heartbeat their ledger-range leases every 10s (see
+  // WorkerLeaseService.startHeartbeat). When a pod dies abruptly the
+  // heartbeat stops; this reaper evicts leases with no heartbeat for >30s
+  // and re-queues their unfinished ranges so ingestion does not stall until
+  // manual operator intervention.
+
+  /** Start the periodic zombie-lease reaper. Safe to call multiple times. */
+  public startLeaseReaper(intervalMs: number = INGESTION_LEASE_REAPER_INTERVAL_MS): void {
+    if (this.leaseReaperTimer) return;
+    const timer = setInterval(() => {
+      this.reapZombieLeases().catch((err) => logger.error({ err }, "Lease reaper cycle failed"));
+    }, intervalMs);
+    if (typeof (timer as any)?.unref === "function") (timer as any).unref();
+    this.leaseReaperTimer = timer;
+  }
+
+  /** Stop the periodic zombie-lease reaper. */
+  public stopLeaseReaper(): void {
+    if (this.leaseReaperTimer) {
+      clearInterval(this.leaseReaperTimer);
+      this.leaseReaperTimer = null;
+    }
+  }
+
+  /**
+   * One reaper cycle: evict zombie leases and re-queue unfinished ranges.
+   *
+   * 1. Evicts leases with no heartbeat for > threshold via
+   *    WorkerLeaseService.evictZombieLeases (lazy import avoids a module cycle).
+   * 2. For each evicted lease, re-queues its `metadata.range` as a pending
+   *    ingestion job (or resets the referenced `metadata.jobId` to pending).
+   * 3. Sweeps `ingestion_jobs` stuck in `processing` with no progress beyond
+   *    the threshold back to `pending` as a second safety net.
+   */
+  public async reapZombieLeases(now: Date = new Date()): Promise<ReapedZombie[]> {
+    const { workerLeaseService } = await import("./workerLease.service.js");
+    const evicted = await workerLeaseService.evictZombieLeases(now, INGESTION_ZOMBIE_THRESHOLD_MS);
+    const reaped: ReapedZombie[] = [];
+
+    for (const lease of evicted) {
+      const meta = (lease.metadata ?? {}) as Record<string, unknown>;
+      const range =
+        (meta.range as Record<string, unknown> | undefined) ??
+        (meta as Record<string, unknown>);
+      let requeuedJobId: string | null = null;
+      try {
+        if (typeof meta.jobId === "string") {
+          const db = getDatabase();
+          const updated = await db("ingestion_jobs")
+            .where({ id: meta.jobId })
+            .whereIn("status", ["processing", "failed"])
+            .update({ status: "pending", next_retry_at: null, updated_at: now });
+          if (updated > 0) requeuedJobId = meta.jobId as string;
+        }
+        if (!requeuedJobId && range && (range.fromLedger !== undefined || range.from !== undefined)) {
+          const job = await this.enqueueJob({
+            type: "event",
+            priority: JobPriority.HIGH,
+            payload: {
+              requeuedFromZombieLease: lease.leaseKey,
+              previousOwner: lease.ownerId,
+              range,
+            },
+          });
+          requeuedJobId = job.id;
+        }
+      } catch (err) {
+        logger.error({ err, leaseKey: lease.leaseKey }, "Failed re-queueing zombie lease range");
+      }
+      logger.warn(
+        { leaseKey: lease.leaseKey, previousOwner: lease.ownerId, requeuedJobId },
+        "Zombie worker lease evicted and range re-queued"
+      );
+      reaped.push({
+        leaseKey: lease.leaseKey,
+        previousOwner: lease.ownerId,
+        range: range ?? {},
+        requeuedJobId,
+      });
+    }
+
+    // Safety net: jobs stuck in `processing` with no update beyond threshold
+    // (e.g. worker died before a lease row existed) go back to `pending`.
+    try {
+      const db = getDatabase();
+      const stuckCutoff = new Date(now.getTime() - INGESTION_ZOMBIE_THRESHOLD_MS);
+      await db("ingestion_jobs")
+        .where({ status: "processing" })
+        .andWhere("updated_at", "<=", stuckCutoff)
+        .update({ status: "pending", updated_at: now });
+    } catch (err) {
+      logger.error({ err }, "Failed sweeping stuck processing jobs");
+    }
+
+    return reaped;
+  }
+
   public async getMetrics(): Promise<IngestionMetrics> {
     const db = getDatabase();
     const [{ pending }, { processing }, { completed }, { failed }, { deadLetter }] = await Promise.all([
@@ -501,7 +520,7 @@ export class IngestionQueueManager {
     return next;
   }
 
-  private async moveToDeadLetter(jobRow: any): Promise<void> {
+  private async moveToDeadLetter(jobRow: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     await db("dead_letter_jobs").insert({
       id: jobRow.id,
@@ -517,21 +536,13 @@ export class IngestionQueueManager {
     await db("ingestion_jobs").where({ id: jobRow.id }).delete();
     logger.warn({ jobId: jobRow.id }, "Job moved to dead-letter queue");
   }
-
-  private mapUnconfirmedEvent(row: any): UnconfirmedEvent {
-    return {
-      id: row.id,
-      sourceChain: row.source_chain,
-      eventType: row.event_type,
-      payload: typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload,
-      txHash: row.tx_hash,
-      ledgerSequence: Number(row.ledger_sequence),
-      observedLedger: Number(row.observed_ledger),
-      confirmations: Number(row.confirmations),
-      requiredConfirmations: Number(row.required_confirmations),
-      isConfirmed: row.is_confirmed,
-      isRolledBack: row.is_rolled_back,
-    };
+  private mapUnconfirmedEvent(row: UnconfirmedEventRow): UnconfirmedEvent {
+    // Delegate to the shared pure mapper to keep logic testable and reuseable.
+    // Import dynamically to avoid circular import issues at module load time.
+    // (The mapper is lightweight and synchronous.)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { mapUnconfirmedEventRow } = require("./ingestionQueueManager.mapper.js");
+    return mapUnconfirmedEventRow(row);
   }
 
   private async getCurrentLedger(sourceChain: string): Promise<number | null> {

@@ -164,6 +164,7 @@ export function buildEscalationChain(
   const visited = new Set<AlertSeverity>([startSeverity]);
   let current = startSeverity;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const rule = rules.find((r) => r.fromSeverity === current);
     if (!rule) break;

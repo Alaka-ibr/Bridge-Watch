@@ -3,6 +3,9 @@ import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 
 const QUERY_TIMEOUT_MS = 30_000;
+export const DEFAULT_SEARCH_LIMIT = 25;
+export const MAX_SEARCH_LIMIT = 100;
+export const MAX_SEARCH_OFFSET = 1_000;
 
 export type SearchEntityType = "asset" | "bridge" | "incident" | "alert";
 
@@ -54,6 +57,7 @@ interface SearchDocumentRecord {
   visibility: string;
   source_updated_at: string | Date;
   indexed_at: string | Date;
+  total_count?: number | string;
 }
 
 interface SearchIndexDocumentInput {
@@ -99,7 +103,20 @@ export class SearchService {
   async search(
     searchQuery: SearchQuery
   ): Promise<{ results: SearchResult[]; total: number; facets?: AssetSearchFacets }> {
-    const { query, type, limit = 20, offset = 0, fuzzy = true, filters = {} } = searchQuery;
+    const { query, type, fuzzy = true, filters = {} } = searchQuery;
+    const limit = this.normalizePaginationValue(
+      searchQuery.limit,
+      DEFAULT_SEARCH_LIMIT,
+      MAX_SEARCH_LIMIT,
+      "limit"
+    );
+    const offset = this.normalizePaginationValue(
+      searchQuery.offset,
+      0,
+      MAX_SEARCH_OFFSET,
+      "offset",
+      true
+    );
 
     if (!query || query.trim().length < 2) {
       return { results: [], total: 0 };
@@ -120,7 +137,7 @@ export class SearchService {
 
     return {
       results,
-      total: rankedResults.length,
+      total: Number(candidateRows[0]?.total_count ?? rankedResults.length),
       ...(facets ? { facets } : {}),
     };
   }
@@ -680,10 +697,13 @@ export class SearchService {
     filters: Record<string, unknown> = {},
     requestedLimit = 20
   ): Promise<SearchDocumentRecord[]> {
-    const scanLimit = Math.min(Math.max(requestedLimit * 6, 30), 250);
+    const scanLimit = Math.min(
+      Math.max(requestedLimit * 6, 30),
+      MAX_SEARCH_OFFSET + MAX_SEARCH_LIMIT
+    );
 
     let query = this.db("search_documents")
-      .select("*")
+      .select("*", this.db.raw("COUNT(*) OVER() AS total_count"))
       .where({ visibility: "public" });
 
     if (type) {
@@ -721,6 +741,21 @@ export class SearchService {
     });
 
     return query.limit(scanLimit);
+  }
+
+  private normalizePaginationValue(
+    value: number | undefined,
+    defaultValue: number,
+    maximum: number,
+    field: "limit" | "offset",
+    allowZero = false
+  ): number {
+    if (value === undefined) return defaultValue;
+    const minimum = allowZero ? 0 : 1;
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+      throw new RangeError(`${field} must be an integer between ${minimum} and ${maximum}`);
+    }
+    return value;
   }
 
   private mapRowToResult(row: SearchDocumentRecord, searchTerms: string[]): SearchResult {

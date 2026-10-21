@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";

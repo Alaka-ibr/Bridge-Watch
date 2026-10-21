@@ -1,6 +1,17 @@
 import Watchlist from "../components/watchlist/Watchlist";
+import EmptyState from "../components/EmptyState";
+import { useWatchlist } from "../hooks/useWatchlist";
 
 export default function WatchlistsPage() {
+  const { watchlists, createWatchlist } = useWatchlist();
+
+  const handleCreate = () => {
+    const name = window.prompt("Watchlist name");
+    if (name) {
+      createWatchlist(name);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -10,7 +21,16 @@ export default function WatchlistsPage() {
         </p>
       </div>
 
-      <Watchlist />
+      {watchlists.length === 0 ? (
+        <EmptyState
+          title="No watchlists yet"
+          description="Create a watchlist to start tracking your favorite assets in one place."
+          actionLabel="Create one"
+          onAction={handleCreate}
+        />
+      ) : (
+        <Watchlist />
+      )}
     </div>
   );
 }

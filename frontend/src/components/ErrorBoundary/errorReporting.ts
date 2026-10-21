@@ -1,12 +1,40 @@
 import type { ErrorInfo, ErrorSeverity } from "./types";
 
 const isDev = import.meta.env.DEV;
+const isTest = import.meta.env.MODE === "test";
+
+const ERROR_REPORT_ENDPOINT = "/api/v1/frontend-errors";
 
 const errorLog: ErrorInfo[] = [];
 const MAX_LOG_SIZE = 50;
 
 function generateId(): string {
   return `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function reportErrorToBackend(entry: ErrorInfo): void {
+  if (isTest || typeof fetch !== "function") {
+    return;
+  }
+
+  const payload = {
+    id: entry.id,
+    severity: entry.severity,
+    context: entry.context ?? null,
+    message: entry.error.message,
+    stack: entry.error.stack ?? null,
+    componentStack: entry.componentStack ?? null,
+    timestamp: new Date(entry.timestamp).toISOString(),
+    page: typeof window !== "undefined" ? window.location.href : null,
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+  };
+
+  void fetch(ERROR_REPORT_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 export function logError(
@@ -38,6 +66,8 @@ export function logError(
     }
     console.groupEnd();
   }
+
+  reportErrorToBackend(entry);
 
   return entry;
 }

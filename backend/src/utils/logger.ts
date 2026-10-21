@@ -166,17 +166,19 @@ const testConfig = {
 };
 
 // Select configuration based on environment
-const loggerConfig = config.NODE_ENV === "development" 
-  ? developmentConfig 
+const loggerConfig = config.NODE_ENV === "development"
+  ? developmentConfig
   : config.NODE_ENV === "test"
   ? testConfig
   : productionConfig;
 
-export const logger = pino(loggerConfig);
+// Create the pino instance and expose a FlexibleLogger wrapper around it.
+const pinoInstance = pino(loggerConfig);
+export const logger: FlexibleLogger = makeFlexibleLogger(pinoInstance);
 
 // Export child logger factory for specific components
 export function createChildLogger(component: string, metadata?: Record<string, any>): FlexibleLogger {
-  const child = logger.child({
+  const child = pinoInstance.child({
     component,
     ...metadata,
   });
@@ -186,10 +188,8 @@ export function createChildLogger(component: string, metadata?: Record<string, a
 
 // Export request-specific logger factory
 export function createRequestLogger(requestId: string, traceContext?: any) {
-  return logger.child({
-    requestId,
-    ...traceContext,
-  });
+  const child = pinoInstance.child({ requestId, ...traceContext });
+  return makeFlexibleLogger(child);
 }
 
 // Export performance logger
@@ -207,3 +207,6 @@ export const auditLogger = createChildLogger('audit', {
 export const accessLogger = createChildLogger('access', {
   type: 'access',
 });
+
+// Provide a default export for modules that import the logger as default.
+export default logger;

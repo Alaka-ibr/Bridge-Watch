@@ -78,6 +78,14 @@ export const handlers = [
     });
   }),
 
+  // Mock Asset Health History
+  http.get("/api/v1/assets/:symbol/health/history", () => {
+    return HttpResponse.json([
+      { timestamp: new Date(Date.now() - 86400000).toISOString(), score: 80 },
+      { timestamp: new Date().toISOString(), score: 85 },
+    ]);
+  }),
+
   // Mock Asset Price
   http.get("/api/v1/assets/:symbol/price", ({ params }) => {
     return HttpResponse.json({

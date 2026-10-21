@@ -1,3 +1,36 @@
+Kubernetes Secrets (SOPS)
+=========================
+
+This repository uses Mozilla SOPS to encrypt Kubernetes secret manifests before
+they are committed. The repository contains a template `k8s/secret.yaml` that
+must be encrypted with SOPS prior to committing real values.
+
+Quick commands:
+
+- Decrypt for editing:
+  sops --decrypt k8s/secret.yaml > k8s/secret.dec.yaml
+
+- Edit `k8s/secret.dec.yaml` (do not commit this file).
+
+- Re-encrypt in-place after editing:
+  sops --encrypt --in-place k8s/secret.dec.yaml && mv k8s/secret.dec.yaml k8s/secret.yaml
+
+CI Integration
+--------------
+The CI pipeline runs a lightweight check that validates `k8s/secret.yaml`
+contains SOPS metadata (a top-level `sops:` mapping). The CI check does not
+require an encryption key and only verifies that the file is encrypted.
+
+Provider and Key
+----------------
+The project uses AWS KMS for secret encryption. The `k8s/.sops.yaml` file
+contains a placeholder KMS ARN — replace it with the real KMS key ARN or set
+up SOPS with the project's KMS key as described in internal infra docs.
+
+Security Notes
+--------------
+- Never commit decrypted secret files. Add `k8s/secret.dec.yaml` to `.gitignore`.
+- Base64 encoding is not encryption — always use SOPS for secret material.
 # Bridge Watch — Kubernetes Deployment
 
 This directory contains all Kubernetes manifests for deploying Bridge Watch to a production cluster.

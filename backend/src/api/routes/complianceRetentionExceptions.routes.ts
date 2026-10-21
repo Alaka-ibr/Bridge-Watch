@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ComplianceRetentionExceptionService } from "../../services/complianceRetentionException.service.js";

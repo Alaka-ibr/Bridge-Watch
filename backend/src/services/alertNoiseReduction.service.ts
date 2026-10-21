@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 

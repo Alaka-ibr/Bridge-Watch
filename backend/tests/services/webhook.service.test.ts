@@ -1,5 +1,62 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { WebhookService, type WebhookEventType } from "../../src/services/webhook.service.js";
+import {
+  WebhookService,
+  validateWebhookUrl,
+  type WebhookEventType,
+} from "../../src/services/webhook.service.js";
+
+describe("validateWebhookUrl", () => {
+  const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+
+  it("accepts public HTTPS destinations", async () => {
+    await expect(
+      validateWebhookUrl("https://hooks.example.com/events", {
+        nodeEnv: "production",
+        lookupAddresses: publicLookup,
+      })
+    ).resolves.toBeInstanceOf(URL);
+  });
+
+  it.each([
+    "https://127.0.0.1/hook",
+    "https://10.0.0.1/hook",
+    "https://172.16.0.1/hook",
+    "https://192.168.1.1/hook",
+    "https://169.254.169.254/latest/meta-data",
+    "https://[::1]/hook",
+  ])("blocks private or metadata destination %s", async (url) => {
+    await expect(validateWebhookUrl(url, { nodeEnv: "production" })).rejects.toThrow(
+      /public address/
+    );
+  });
+
+  it("blocks hostnames when any DNS answer is private", async () => {
+    await expect(
+      validateWebhookUrl("https://rebind.example/hook", {
+        nodeEnv: "production",
+        lookupAddresses: async () => [
+          { address: "93.184.216.34", family: 4 },
+          { address: "10.0.0.7", family: 4 },
+        ],
+      })
+    ).rejects.toThrow(/public addresses/);
+  });
+
+  it("requires HTTPS in production and rejects credentials", async () => {
+    await expect(
+      validateWebhookUrl("http://hooks.example.com", {
+        nodeEnv: "production",
+        lookupAddresses: publicLookup,
+      })
+    ).rejects.toThrow(/HTTPS/);
+    await expect(
+      validateWebhookUrl("https://user:pass@hooks.example.com", {
+        nodeEnv: "production",
+        lookupAddresses: publicLookup,
+      })
+    ).rejects.toThrow(/credentials/);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Mocks

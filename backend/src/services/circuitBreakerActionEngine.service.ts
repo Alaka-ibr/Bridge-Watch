@@ -18,8 +18,6 @@ const execFileAsync = promisify(execFile);
 const OPERATOR_ADMIN_SCOPE = "operator:admin";
 
 export interface ScriptActionPayload {
-
-export interface ScriptActionPayload {
   command?: string;
   scriptPath?: string;
   args?: string[];

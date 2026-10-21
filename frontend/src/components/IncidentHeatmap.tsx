@@ -1,6 +1,8 @@
 // src/components/IncidentHeatmap.tsx
 import React, { useMemo } from "react";
 import { useIncidentFeed, type IncidentSeverity, type BridgeIncident } from "../hooks/useIncidentFeed";
+import { SkeletonChart } from "./Skeleton";
+import EmptyState from "./EmptyState";
 
 // Helper to bucket incidents by date (YYYY-MM-DD) and asset code
 function bucketIncidents(incidents: BridgeIncident[]) {
@@ -52,8 +54,16 @@ export default function IncidentHeatmap() {
           Failed to load incidents.
         </div>
       )}
-      {isLoading && <p className="text-stellar-text-secondary">Loading…</p>}
-      {!isLoading && !error && (
+      {isLoading && (
+        <SkeletonChart height={180} ariaLabel="Loading incident heatmap" />
+      )}
+      {!isLoading && !error && incidents.length === 0 && (
+        <EmptyState
+          title="No incidents"
+          description="All systems operational — no incidents recorded for this period."
+        />
+      )}
+      {!isLoading && !error && incidents.length > 0 && (
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${assetsSet.length + 1}, minmax(30px, 1fr))` }}>
           {/* Header row */}
           <div></div>

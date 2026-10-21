@@ -36,10 +36,9 @@ const EXCLUDED_HEADERS = [
   'x-secret-token',
 ];
 
-const SLOW_REQUEST_THRESHOLD_MS = parseInt(
-  process.env.REQUEST_SLOW_THRESHOLD_MS || '1000',
-  10
-);
+const SLOW_REQUEST_THRESHOLD_MS = Number.isFinite(Number(config.REQUEST_SLOW_THRESHOLD_MS))
+  ? Number(config.REQUEST_SLOW_THRESHOLD_MS)
+  : 1000;
 
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const redacted = { ...headers };

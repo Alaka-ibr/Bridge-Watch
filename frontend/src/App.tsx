@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import { LoadingFallback } from "./components/LoadingFallback";
 import { GlobalErrorBoundary, ComponentErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationProvider } from "./context/NotificationContext";
+import { RTLProvider } from "./contexts/RTLContext";
 import { useNotifications } from "./hooks/useNotifications";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -110,42 +111,106 @@ const ExportQuotas = lazy(() => import("./pages/admin/ExportQuotas"));
 const RpcCapabilities = lazy(() => import("./pages/admin/RpcCapabilities"));
 const TokenDecimalAlerts = lazy(() => import("./pages/admin/TokenDecimalAlerts"));
 const AuditTrailPage = lazy(() => import("./pages/admin/audit/AuditTrailPage"));
+// #1199 — Contract Event Subscription Registry
+const ContractEventSubscriptions = lazy(() => import("./pages/ContractEventSubscriptions"));
+// #1190 — Secret Provider Health Checks
+const SecretProviderHealth = lazy(() => import("./pages/admin/SecretProviderHealth"));
+// #1191 — Container Resource Utilization Dashboard
+const ContainerResourceUtilization = lazy(() => import("./pages/ContainerResourceUtilization"));
 
 function NotificationInitializer() {
   useNotifications();
   return null;
 }
 
+function PageBoundary({ page, children }: { page: string; children: ReactNode }) {
+  return (
+    <ComponentErrorBoundary severity="high" context={`page:${page}`}>
+      {children}
+    </ComponentErrorBoundary>
+  );
+}
+
 function App() {
   return (
     <GlobalErrorBoundary>
-      <NotificationProvider>
-        <NotificationInitializer />
-        <Suspense fallback={<LoadingFallback />}>
-          <Routes>
+      <RTLProvider>
+        <NotificationProvider>
+          <NotificationInitializer />
+          <Suspense fallback={<LoadingFallback />}>
+            <Routes>
             <Route path="/" element={<Landing />} />
 
             <Route element={<Layout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <PageBoundary page="dashboard">
+                    <Dashboard />
+                  </PageBoundary>
+                }
+              />
               <Route path="/assets/:symbol" element={<AssetDetail />} />
               <Route path="/bridges" element={<Bridges />} />
-              <Route path="/incidents" element={<Incidents />} />
+              <Route
+                path="/incidents"
+                element={
+                  <PageBoundary page="incidents">
+                    <Incidents />
+                  </PageBoundary>
+                }
+              />
               <Route path="/incidents/replay/:id" element={<IncidentReplay />} />
-              <Route path="/alerts" element={<Alerts />} />
+              <Route
+                path="/alerts"
+                element={
+                  <PageBoundary page="alerts">
+                    <Alerts />
+                  </PageBoundary>
+                }
+              />
               <Route path="/alert-playbooks" element={<AlertPlaybookViewer />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/analytics" element={<Analytics />} />
+              <Route
+                path="/transactions"
+                element={
+                  <PageBoundary page="transactions">
+                    <Transactions />
+                  </PageBoundary>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <PageBoundary page="analytics">
+                    <Analytics />
+                  </PageBoundary>
+                }
+              />
               <Route path="/analytics/metric-builder" element={<CustomMetricBuilder />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/watchlist" element={<WatchlistPage />} />
-              <Route path="/watchlists" element={<WatchlistsPage />} />
+              <Route
+                path="/watchlists"
+                element={
+                  <PageBoundary page="watchlists">
+                    <WatchlistsPage />
+                  </PageBoundary>
+                }
+              />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/api-keys" element={<ApiKeys />} />
               <Route path="/admin/alert-routing" element={<AlertRoutingAdmin />} />
               <Route path="/admin/access-audit" element={<OperationalAccessAudit />} />
               <Route path="/supply-chain" element={<SupplyChain />} />
               <Route path="/bridge-topology" element={<BridgeTopologyExplorer />} />
-              <Route path="/reconciliation" element={<Reconciliation />} />
+              <Route
+                path="/reconciliation"
+                element={
+                  <PageBoundary page="reconciliation">
+                    <Reconciliation />
+                  </PageBoundary>
+                }
+              />
               <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="/help" element={<Help />} />
               <Route path="/release-notes" element={<ReleaseNotes />} />
@@ -243,10 +308,17 @@ function App() {
               <Route path="/admin/rpc-capabilities" element={<RpcCapabilities />} />
               <Route path="/admin/token-decimal-alerts" element={<TokenDecimalAlerts />} />
               <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
+              {/* #1199 — Contract Event Subscription Registry */}
+              <Route path="/contract-subscriptions" element={<ContractEventSubscriptions />} />
+              {/* #1190 — Secret Provider Health Checks */}
+              <Route path="/admin/secret-provider-health" element={<SecretProviderHealth />} />
+              {/* #1191 — Container Resource Utilization Dashboard */}
+              <Route path="/container-resources" element={<ContainerResourceUtilization />} />
             </Route>
           </Routes>
         </Suspense>
       </NotificationProvider>
+    </RTLProvider>
     </GlobalErrorBoundary>
   );
 }

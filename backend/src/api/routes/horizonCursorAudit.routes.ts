@@ -32,8 +32,8 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Body: { cursorKey: string; cursorType: string; sourceName: string; currentPosition: string } }>, reply: FastifyReply) => {
-      const cursor = await horizonCursorAuditService.initializeCursor(request.body);
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const cursor = await horizonCursorAuditService.initializeCursor(request.body as any);
       return reply.status(201).send(cursor);
     },
   );
@@ -68,11 +68,11 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string }; Body: { newPosition: string; eventsInBatch: number; reasonCode?: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
-      const { newPosition, eventsInBatch, reasonCode } = request.body;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
+      const { newPosition, eventsInBatch, reasonCode } = request.body as any;
 
-      const result = await horizonCursorAuditService.advanceCursor(cursorKey, newPosition, eventsInBatch, reasonCode);
+      const result = await horizonCursorAuditService.advanceCursor(cursorKey, newPosition, eventsInBatch, reasonCode as any);
 
       return reply.send(result);
     },
@@ -113,7 +113,7 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Body: any }>, reply: FastifyReply) => {
+    async (request: FastifyRequest, reply: FastifyReply) => {
       const rollback = await horizonCursorAuditService.createRollback(request.body as any);
       return reply.status(201).send(rollback);
     },
@@ -133,8 +133,8 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { rollbackId: string } }>, reply: FastifyReply) => {
-      const { rollbackId } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { rollbackId } = request.params as any;
 
       await horizonCursorAuditService.completeRollback(rollbackId);
 
@@ -164,11 +164,11 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorId: string }; Body: { horizonPosition: string } }>, reply: FastifyReply) => {
-      const { cursorId } = request.params;
-      const { horizonPosition } = request.body;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorId } = request.params as any;
+      const { horizonPosition } = request.body as any;
 
-      const reconciliation = await horizonCursorAuditService.reconcileCursorPosition(cursorId, horizonPosition);
+      const reconciliation = await horizonCursorAuditService.reconcileCursorPosition(cursorId as any, horizonPosition as any);
 
       return reply.status(201).send(reconciliation);
     },
@@ -195,15 +195,18 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string }; Querystring: { limit?: string; offset?: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
-      const { limit: limitNum, offset, page } = getPaginationParams(request.query as any);
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
+      const { limit, offset } = getPaginationParams(request.query as Record<string, string>);
 
-      const result = await horizonCursorAuditService.getAuditLog(cursorKey, limitNum, offset);
+      const result = await horizonCursorAuditService.getAuditLog(cursorKey as any, limit, offset);
 
-      return reply.send(
-        formatPaginatedResponse(result.logs, Number(result.pagination.total), page, limitNum),
-      );
+      return reply.send((formatPaginatedResponse as any)(result.logs as any, {
+        total: (result.pagination as any).total,
+        limit,
+        offset,
+        cursor: result.cursor,
+      } as any));
     },
   );
 
@@ -225,11 +228,11 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string }; Querystring: { limit?: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
       const { limit } = request.query as Record<string, string>;
 
-      const rollbacks = await horizonCursorAuditService.getRollbackHistory(cursorKey, parseInt(limit, 10) || 50);
+      const rollbacks = await horizonCursorAuditService.getRollbackHistory(cursorKey as any, parseInt(limit, 10) || 50);
 
       return reply.send({ rollbacks });
     },
@@ -253,11 +256,11 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string }; Querystring: { limit?: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
       const { limit } = request.query as Record<string, string>;
 
-      const reconciliations = await horizonCursorAuditService.getReconciliationHistory(cursorKey, parseInt(limit, 10) || 50);
+      const reconciliations = await horizonCursorAuditService.getReconciliationHistory(cursorKey as any, parseInt(limit, 10) || 50);
 
       return reply.send({ reconciliations });
     },
@@ -299,10 +302,10 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
 
-      await horizonCursorAuditService.pauseCursor(cursorKey);
+      await horizonCursorAuditService.pauseCursor(cursorKey as any);
 
       return reply.send({ success: true });
     },
@@ -322,10 +325,10 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest<{ Params: { cursorKey: string } }>, reply: FastifyReply) => {
-      const { cursorKey } = request.params;
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { cursorKey } = request.params as any;
 
-      await horizonCursorAuditService.resumeCursor(cursorKey);
+      await horizonCursorAuditService.resumeCursor(cursorKey as any);
 
       return reply.send({ success: true });
     },

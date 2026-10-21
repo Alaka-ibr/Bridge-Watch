@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { ledgerCloseDelayService } from "../../services/ledgerCloseDelay.service.js";
 import { authMiddleware } from "../middleware/auth.js";

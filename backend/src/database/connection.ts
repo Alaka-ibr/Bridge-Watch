@@ -69,3 +69,8 @@ export async function closeDatabase(): Promise<void> {
     logger.info("Database connection closed");
   }
 }
+
+// Backwards-compatible getter used by older imports
+export function getDb(): Knex {
+  return getDatabase();
+}

@@ -14,7 +14,8 @@ export async function searchRoutes(server: FastifyInstance) {
     "/",
     {
       preHandler: validateRequest({ body: SearchBodySchema }),
-    },
+      rateLimit: { max: 30, timeWindow: "1 minute" },
+    } as any,
     async (
       request: FastifyRequest<{
         Body: z.infer<typeof SearchBodySchema>;
@@ -55,7 +56,8 @@ export async function searchRoutes(server: FastifyInstance) {
     "/",
     {
       preHandler: validateRequest({ query: SearchQuerySchema }),
-    },
+      rateLimit: { max: 30, timeWindow: "1 minute" },
+    } as any,
     async (
       request: FastifyRequest<{
         Querystring: z.infer<typeof SearchQuerySchema>;
@@ -95,7 +97,8 @@ export async function searchRoutes(server: FastifyInstance) {
     "/suggestions",
     {
       preHandler: validateRequest({ query: SearchSuggestionSchema }),
-    },
+      rateLimit: { max: 60, timeWindow: "1 minute" },
+    } as any,
     async (
       request: FastifyRequest<{
         Querystring: z.infer<typeof SearchSuggestionSchema>;

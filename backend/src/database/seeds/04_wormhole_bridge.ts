@@ -1,5 +1,6 @@
 import type { Knex } from "knex";
 import type { ChainId } from "../../services/ethereum/types.js";
+import { config } from "../../config/index.js";
 
 /**
  * Seed: Wormhole multi-chain bridge registration.
@@ -14,7 +15,7 @@ import type { ChainId } from "../../services/ethereum/types.js";
  */
 export async function seed(knex: Knex): Promise<void> {
   const BRIDGE_NAME = "Wormhole Bridge";
-  const assetSymbol = process.env.WORMHOLE_WATCHED_ASSET_SYMBOL || "wETH";
+  const assetSymbol = config.WORMHOLE_WATCHED_ASSET_SYMBOL || "wETH";
 
   await knex("bridges")
     .insert({
@@ -29,7 +30,7 @@ export async function seed(knex: Knex): Promise<void> {
     .onConflict("name")
     .ignore();
 
-  const stellarIssuer = process.env.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER;
+  const stellarIssuer = config.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER;
   await knex("assets")
     .insert({
       symbol: assetSymbol,
@@ -52,8 +53,8 @@ export async function seed(knex: Knex): Promise<void> {
   const rows = chainEnvMap
     .map(({ chainId, bridgeEnv, tokenEnv }) => ({
       chainId,
-      contractAddress: process.env[bridgeEnv],
-      tokenAddress: process.env[tokenEnv],
+      contractAddress: (config as any)[bridgeEnv],
+      tokenAddress: (config as any)[tokenEnv],
     }))
     .filter(
       (row): row is { chainId: ChainId; contractAddress: string; tokenAddress: string } =>

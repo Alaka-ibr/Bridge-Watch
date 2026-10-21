@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { BridgeAnalytics } from "../../hooks/useAnalytics";
+import { SkeletonChart } from "../Skeleton";
 
 interface BridgeComparisonProps {
   bridges: BridgeAnalytics[];
@@ -54,12 +55,7 @@ const CustomTooltip = ({
 
 export default function BridgeComparison({ bridges, isLoading }: BridgeComparisonProps) {
   if (isLoading) {
-    return (
-      <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">
-        <div className="h-5 w-48 bg-stellar-border rounded animate-pulse mb-4" />
-        <div className="h-64 bg-stellar-border/30 rounded animate-pulse" />
-      </div>
-    );
+    return <SkeletonChart height={300} ariaLabel="Loading bridge comparison chart" />;
   }
 
   const data = bridges.map((b) => ({
