@@ -56,6 +56,17 @@ path = "tests/oracle_hub.test.rs"
 name = "emergency_actions_test"
 path = "tests/emergency_actions.test.rs"
 
+# sidecar_state has its tests in-module (src/sidecar_state.rs) rather than as
+# an external tests/*.rs file: the module is only compiled under cfg(test)
+# (see src/lib.rs) to avoid a Wasm export collision between
+# SidecarStateContract::initialize and BridgeWatchContract::initialize, so an
+# external integration-test crate — built against the normal, non-cfg(test)
+# library — cannot see it at all.
+
+[[test]]
+name = "source_priority_test"
+path = "tests/source_priority.test.rs"
+
 [[test]]
 name = "relay_contract_fuzz"
 path = "tests/relay_contract_fuzz.rs"
